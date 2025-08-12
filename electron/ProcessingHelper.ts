@@ -531,8 +531,8 @@ export class ProcessingHelper {
               role: "user",
               parts: [
                 {
-                  text: `You are a coding challenge interpreter primarily. Analyze the screenshots of the coding problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, function_signature(the names & types of parameters, function name/class name), example_input, example_output. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.
-                  If the problem is not a coding rather quantitative problem or logical reasoning task or core cs related then return the relevant information i.e (as JSON attributes "problem_statement", "options") strictly.`
+                  text: `You are a challenge interpreter. Analyze the screenshots of the problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, function_signature(the names & types of parameters, function name/class name), example_input, example_output if its a coding question. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.
+                  If the problem is not a coding rather a mcq quantitative problem or logical reasoning task or core cs related then return the relevant information i.e (as 2 JSON attributes "problem_statement", "options") strictly.`
                 },
                 ...imageDataList.map(data => ({
                   inlineData: {
@@ -756,12 +756,10 @@ ${problemInfo.example_output || "No example output provided."}
 LANGUAGE: ${language}
 
 I need the response in the following format:
-1. Code: A clean, optimized implementation in ${language} following the ${problemInfo.function_signature} strictly.
-2. If it is a mcq question then i want proper analytical thinking and step by step procedure behind eliminating each option and untimately giving the final correct option and cross check verify in the end as well.
-3. Your Thoughts: A list of key insights and reasoning behind your approach
-4. Time complexity: O(X) with a detailed explanation (at least 2 sentences)
-5. Space complexity: O(X) with a detailed explanation (at least 2 sentences)
-6. Should seem human written and not AI generated. Should bypass similarity detection, including but not limited to code structure, variable names, and comments.
+1. If it is a mcq question then i want proper analytical deep thinking and step by step procedure and logic behind eliminating each option and ultimately giving the final correct option and cross check verify in the end as well.
+2. If it is a coding question then I want the code to be a clean, optimized implementation in ${language} following the ${problemInfo.function_signature} strictly.
+3. Your Thoughts: A list of key insights and reasoning behind your approach.
+4. If its a coding problem then I want the response to include time complexity and space complexity analysis.
 
 For complexity explanations, please be thorough. For example: "Time complexity: O(n) because we iterate through the array only once. This is optimal as we need to examine each element at least once to find the solution." or "Space complexity: O(n) because in the worst case, we store all elements in the hashmap. The additional space scales linearly with the input size."
 
