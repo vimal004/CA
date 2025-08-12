@@ -1050,7 +1050,7 @@ If you include code examples, use proper markdown code blocks with language spec
 1. What issues you found in my code
 2. Specific improvements and corrections
 3. Any optimizations that would make the solution better
-4. A clear explanation of the changes needed`
+4. A clear explanation of the changes needed and the final formatted clean version of the proper code`
               },
               ...imageDataList.map(data => ({
                 type: "image_url" as const,
