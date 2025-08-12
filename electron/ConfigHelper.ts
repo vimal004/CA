@@ -7,7 +7,7 @@ import { OpenAI } from "openai"
 
 interface Config {
   apiKey: string;
-  apiProvider: "openai" | "gemini" | "anthropic";  // Added provider selection
+  apiProvider: "gemini";  // Added provider selection
   extractionModel: string;
   solutionModel: string;
   debuggingModel: string;
@@ -20,9 +20,9 @@ export class ConfigHelper extends EventEmitter {
   private defaultConfig: Config = {
     apiKey: "",
     apiProvider: "gemini", // Default to Gemini
-    extractionModel: "gemini-2.0-flash", // Default to Flash for faster responses
-    solutionModel: "gemini-2.0-flash",
-    debuggingModel: "gemini-2.0-flash",
+    extractionModel: "gemini-2.5-flash", // Default to Flash for faster responses
+    solutionModel: "gemini-2.5-flash",
+    debuggingModel: "gemini-2.5-flash",
     language: "python",
     opacity: 1.0
   };
@@ -37,7 +37,7 @@ export class ConfigHelper extends EventEmitter {
       console.warn('Could not access user data path, using fallback');
       this.configPath = path.join(process.cwd(), 'config.json');
     }
-    
+
     // Ensure the initial config file exists
     this.ensureConfigExists();
   }
@@ -69,7 +69,7 @@ export class ConfigHelper extends EventEmitter {
       return model;
     } else if (provider === "gemini")  {
       // Only allow gemini-1.5-pro and gemini-2.0-flash for Gemini
-      const allowedModels = ['gemini-1.5-pro', 'gemini-2.0-flash'];
+      const allowedModels = ['gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-2.5-flash'];
       if (!allowedModels.includes(model)) {
         console.warn(`Invalid Gemini model specified: ${model}. Using default model: gemini-2.0-flash`);
         return 'gemini-2.0-flash'; // Changed default to flash
@@ -93,12 +93,12 @@ export class ConfigHelper extends EventEmitter {
       if (fs.existsSync(this.configPath)) {
         const configData = fs.readFileSync(this.configPath, 'utf8');
         const config = JSON.parse(configData);
-        
+
         // Ensure apiProvider is a valid value
         if (config.apiProvider !== "openai" && config.apiProvider !== "gemini"  && config.apiProvider !== "anthropic") {
           config.apiProvider = "gemini"; // Default to Gemini if invalid
         }
-        
+
         // Sanitize model selections to ensure only allowed models are used
         if (config.extractionModel) {
           config.extractionModel = this.sanitizeModelSelection(config.extractionModel, config.apiProvider);
@@ -109,13 +109,13 @@ export class ConfigHelper extends EventEmitter {
         if (config.debuggingModel) {
           config.debuggingModel = this.sanitizeModelSelection(config.debuggingModel, config.apiProvider);
         }
-        
+
         return {
           ...this.defaultConfig,
           ...config
         };
       }
-      
+
       // If no config exists, create a default one
       this.saveConfig(this.defaultConfig);
       return this.defaultConfig;
@@ -149,7 +149,7 @@ export class ConfigHelper extends EventEmitter {
     try {
       const currentConfig = this.loadConfig();
       let provider = updates.apiProvider || currentConfig.apiProvider;
-      
+
       // Auto-detect provider based on API key format if a new key is provided
       if (updates.apiKey && !updates.apiProvider) {
         // If API key starts with "sk-", it's likely an OpenAI key
@@ -163,11 +163,11 @@ export class ConfigHelper extends EventEmitter {
           provider = "gemini";
           console.log("Using Gemini API key format (default)");
         }
-        
+
         // Update the provider in the updates object
         updates.apiProvider = provider;
       }
-      
+
       // If provider is changing, reset models to the default for that provider
       if (updates.apiProvider && updates.apiProvider !== currentConfig.apiProvider) {
         if (updates.apiProvider === "openai") {
@@ -179,12 +179,12 @@ export class ConfigHelper extends EventEmitter {
           updates.solutionModel = "claude-3-7-sonnet-20250219";
           updates.debuggingModel = "claude-3-7-sonnet-20250219";
         } else {
-          updates.extractionModel = "gemini-2.0-flash";
-          updates.solutionModel = "gemini-2.0-flash";
-          updates.debuggingModel = "gemini-2.0-flash";
+          updates.extractionModel = "gemini-2.5-flash";
+          updates.solutionModel = "gemini-2.5-flash";
+          updates.debuggingModel = "gemini-2.5-flash";
         }
       }
-      
+
       // Sanitize model selections in the updates
       if (updates.extractionModel) {
         updates.extractionModel = this.sanitizeModelSelection(updates.extractionModel, provider);
@@ -195,18 +195,18 @@ export class ConfigHelper extends EventEmitter {
       if (updates.debuggingModel) {
         updates.debuggingModel = this.sanitizeModelSelection(updates.debuggingModel, provider);
       }
-      
+
       const newConfig = { ...currentConfig, ...updates };
       this.saveConfig(newConfig);
-      
+
       // Only emit update event for changes other than opacity
       // This prevents re-initializing the AI client when only opacity changes
-      if (updates.apiKey !== undefined || updates.apiProvider !== undefined || 
-          updates.extractionModel !== undefined || updates.solutionModel !== undefined || 
+      if (updates.apiKey !== undefined || updates.apiProvider !== undefined ||
+          updates.extractionModel !== undefined || updates.solutionModel !== undefined ||
           updates.debuggingModel !== undefined || updates.language !== undefined) {
         this.emit('config-updated', newConfig);
       }
-      
+
       return newConfig;
     } catch (error) {
       console.error('Error updating config:', error);
@@ -221,7 +221,7 @@ export class ConfigHelper extends EventEmitter {
     const config = this.loadConfig();
     return !!config.apiKey && config.apiKey.trim().length > 0;
   }
-  
+
   /**
    * Validate the API key format
    */
@@ -238,7 +238,7 @@ export class ConfigHelper extends EventEmitter {
         provider = "gemini";
       }
     }
-    
+
     if (provider === "openai") {
       // Basic format validation for OpenAI API keys
       return /^sk-[a-zA-Z0-9]{32,}$/.test(apiKey.trim());
@@ -249,10 +249,10 @@ export class ConfigHelper extends EventEmitter {
       // Basic format validation for Anthropic API keys
       return /^sk-ant-[a-zA-Z0-9]{32,}$/.test(apiKey.trim());
     }
-    
+
     return false;
   }
-  
+
   /**
    * Get the stored opacity value
    */
@@ -268,8 +268,8 @@ export class ConfigHelper extends EventEmitter {
     // Ensure opacity is between 0.1 and 1.0
     const validOpacity = Math.min(1.0, Math.max(0.1, opacity));
     this.updateConfig({ opacity: validOpacity });
-  }  
-  
+  }
+
   /**
    * Get the preferred programming language
    */
@@ -284,7 +284,7 @@ export class ConfigHelper extends EventEmitter {
   public setLanguage(language: string): void {
     this.updateConfig({ language });
   }
-  
+
   /**
    * Test API key with the selected provider
    */
@@ -304,7 +304,7 @@ export class ConfigHelper extends EventEmitter {
         console.log("Using Gemini API key format for testing (default)");
       }
     }
-    
+
     if (provider === "openai") {
       return this.testOpenAIKey(apiKey);
     } else if (provider === "gemini") {
@@ -312,10 +312,10 @@ export class ConfigHelper extends EventEmitter {
     } else if (provider === "anthropic") {
       return this.testAnthropicKey(apiKey);
     }
-    
+
     return { valid: false, error: "Unknown API provider" };
   }
-  
+
   /**
    * Test OpenAI API key
    */
@@ -327,10 +327,10 @@ export class ConfigHelper extends EventEmitter {
       return { valid: true };
     } catch (error: any) {
       console.error('OpenAI API key test failed:', error);
-      
+
       // Determine the specific error type for better error messages
       let errorMessage = 'Unknown error validating OpenAI API key';
-      
+
       if (error.status === 401) {
         errorMessage = 'Invalid API key. Please check your OpenAI key and try again.';
       } else if (error.status === 429) {
@@ -340,11 +340,11 @@ export class ConfigHelper extends EventEmitter {
       } else if (error.message) {
         errorMessage = `Error: ${error.message}`;
       }
-      
+
       return { valid: false, error: errorMessage };
     }
   }
-  
+
   /**
    * Test Gemini API key
    * Note: This is a simplified implementation since we don't have the actual Gemini client
@@ -361,11 +361,11 @@ export class ConfigHelper extends EventEmitter {
     } catch (error: any) {
       console.error('Gemini API key test failed:', error);
       let errorMessage = 'Unknown error validating Gemini API key';
-      
+
       if (error.message) {
         errorMessage = `Error: ${error.message}`;
       }
-      
+
       return { valid: false, error: errorMessage };
     }
   }
@@ -386,11 +386,11 @@ export class ConfigHelper extends EventEmitter {
     } catch (error: any) {
       console.error('Anthropic API key test failed:', error);
       let errorMessage = 'Unknown error validating Anthropic API key';
-      
+
       if (error.message) {
         errorMessage = `Error: ${error.message}`;
       }
-      
+
       return { valid: false, error: errorMessage };
     }
   }
