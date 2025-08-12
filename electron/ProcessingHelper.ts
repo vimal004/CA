@@ -756,8 +756,8 @@ ${problemInfo.example_output || "No example output provided."}
 LANGUAGE: ${language}
 
 I need the response in the following format:
-1. If it is a mcq question then i want proper analytical deep thinking and step by step procedure and logic behind eliminating each option and ultimately giving the final correct option and cross check verify in the end as well.
-2. If it is a coding question then I want the code to be a clean, optimized implementation in ${language} following the ${problemInfo.function_signature} strictly.
+1. If it is a mcq question which has multiple options and only (problem_statement and options attributes) then u need not consider it as a coding question and i want proper analytical deep thinking and step by step procedure and logic behind eliminating each option and ultimately giving the final correct option and cross check verify in the end as well.
+2. If it is a coding question (i.e if it has problem_statement, constraints, function_signature, example_input, example_output) then I want u to consider it as a coding question and I want the code to be a clean, optimized implementation in ${language} following the ${problemInfo.function_signature} strictly.
 3. Your Thoughts: A list of key insights and reasoning behind your approach.
 4. If its a coding problem then I want the response to include time complexity and space complexity analysis.
 
