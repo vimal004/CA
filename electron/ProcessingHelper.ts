@@ -547,6 +547,7 @@ export class ProcessingHelper {
             }
           ];
 
+
           // Make API request to Gemini
           const response = await axios.default.post(
             `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
