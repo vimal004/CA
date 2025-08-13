@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
-import { prism } from "react-syntax-highlighter/dist/esm/styles/prism"
+import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism"
 
 import ScreenshotQueue from "../components/Queue/ScreenshotQueue"
 
@@ -21,29 +21,23 @@ export const ContentSection = ({
   content: React.ReactNode
   isLoading: boolean
 }) => (
-  <div className="space-y-3">
-    <h2 className="text-sm font-semibold text-gray-900 tracking-tight">
+  <div className="space-y-2">
+    <h2 className="text-[13px] font-medium text-white tracking-wide">
       {title}
     </h2>
     {isLoading ? (
-      <div className="py-4">
-        <div className="flex items-center space-x-2">
-          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-          <span className="text-sm text-gray-500 ml-2">
-            {title.includes('Problem') ? 'Extracting problem statement...' : 'Loading...'}
-          </span>
-        </div>
+      <div className="mt-4 flex">
+        <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
+          Extracting problem statement...
+        </p>
       </div>
     ) : (
-      <div className="text-sm leading-relaxed text-gray-700 max-w-4xl">
+      <div className="text-[13px] leading-[1.4] text-gray-100 max-w-[600px]">
         {content}
       </div>
     )}
   </div>
 )
-
 const SolutionSection = ({
   title,
   content,
@@ -67,42 +61,37 @@ const SolutionSection = ({
   }
 
   return (
-    <div className="space-y-3">
-      <h2 className="text-sm font-semibold text-gray-900 tracking-tight">
+    <div className="space-y-2 relative">
+      <h2 className="text-[13px] font-medium text-white tracking-wide">
         {title}
       </h2>
       {isLoading ? (
-        <div className="py-4">
-          <div className="flex items-center space-x-2">
-            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-            <span className="text-sm text-gray-500 ml-2">Loading solutions...</span>
+        <div className="space-y-1.5">
+          <div className="mt-4 flex">
+            <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
+              Loading solutions...
+            </p>
           </div>
         </div>
       ) : (
         <div className="w-full relative">
           <button
             onClick={copyToClipboard}
-            className="absolute top-3 right-3 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md px-3 py-1.5 transition-colors duration-200 z-10 border border-gray-200"
+            className="absolute top-2 right-2 text-xs text-white bg-white/10 hover:bg-white/20 rounded px-2 py-1 transition"
           >
             {copied ? "Copied!" : "Copy"}
           </button>
           <SyntaxHighlighter
             showLineNumbers
             language={currentLanguage == "golang" ? "go" : currentLanguage}
-            style={prism}
+            style={dracula}
             customStyle={{
               maxWidth: "100%",
               margin: 0,
-              padding: "1.5rem",
+              padding: "1rem",
               whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              backgroundColor: "#f8fafc",
-              border: "1px solid #e2e8f0",
-              borderRadius: "0.75rem",
-              fontSize: "0.875rem",
-              lineHeight: "1.5"
+              wordBreak: "break-all",
+              backgroundColor: "rgba(22, 27, 34, 0.5)"
             }}
             wrapLongLines={true}
           >
@@ -144,36 +133,29 @@ export const ComplexitySection = ({
   const formattedSpaceComplexity = formatComplexity(spaceComplexity);
 
   return (
-    <div className="space-y-3">
-      <h2 className="text-sm font-semibold text-gray-900 tracking-tight">
-        Complexity Analysis
+    <div className="space-y-2">
+      <h2 className="text-[13px] font-medium text-white tracking-wide">
+        Complexity
       </h2>
       {isLoading ? (
-        <div className="py-4">
-          <div className="flex items-center space-x-2">
-            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-            <span className="text-sm text-gray-500 ml-2">Calculating complexity...</span>
-          </div>
-        </div>
+        <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
+          Calculating complexity...
+        </p>
       ) : (
         <div className="space-y-3">
-          <div className="text-sm leading-relaxed text-gray-700 bg-gray-50 rounded-lg p-4 border border-gray-200">
-            <div className="flex items-start gap-3">
-              <div className="w-2 h-2 rounded-full bg-blue-500 mt-2 shrink-0" />
+          <div className="text-[13px] leading-[1.4] text-gray-100 bg-white/5 rounded-md p-3">
+            <div className="flex items-start gap-2">
+              <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
               <div>
-                <span className="font-medium text-gray-900">Time Complexity:</span>
-                <span className="ml-2 font-mono text-gray-800">{formattedTimeComplexity}</span>
+                <strong>Time:</strong> {formattedTimeComplexity}
               </div>
             </div>
           </div>
-          <div className="text-sm leading-relaxed text-gray-700 bg-gray-50 rounded-lg p-4 border border-gray-200">
-            <div className="flex items-start gap-3">
-              <div className="w-2 h-2 rounded-full bg-green-500 mt-2 shrink-0" />
+          <div className="text-[13px] leading-[1.4] text-gray-100 bg-white/5 rounded-md p-3">
+            <div className="flex items-start gap-2">
+              <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
               <div>
-                <span className="font-medium text-gray-900">Space Complexity:</span>
-                <span className="ml-2 font-mono text-gray-800">{formattedSpaceComplexity}</span>
+                <strong>Space:</strong> {formattedSpaceComplexity}
               </div>
             </div>
           </div>
@@ -189,7 +171,6 @@ export interface SolutionsProps {
   currentLanguage: string
   setLanguage: (language: string) => void
 }
-
 const Solutions: React.FC<SolutionsProps> = ({
   setView,
   credits,
@@ -492,37 +473,37 @@ const Solutions: React.FC<SolutionsProps> = ({
           setLanguage={setLanguage}
         />
       ) : (
-        <div ref={contentRef} className="min-h-screen bg-white">
-          <div className="max-w-6xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-
-            {/* Screenshot Queue Section */}
-            {solutionData && (
-              <div className="mb-8">
-                <ScreenshotQueue
-                  isLoading={debugProcessing}
-                  screenshots={extraScreenshots}
-                  onDeleteScreenshot={handleDeleteExtraScreenshot}
-                />
+        <div ref={contentRef} className="relative">
+          <div className="space-y-3 px-4 py-3">
+          {/* Conditionally render the screenshot queue if solutionData is available */}
+          {solutionData && (
+            <div className="bg-transparent w-fit">
+              <div className="pb-3">
+                <div className="space-y-3 w-fit">
+                  <ScreenshotQueue
+                    isLoading={debugProcessing}
+                    screenshots={extraScreenshots}
+                    onDeleteScreenshot={handleDeleteExtraScreenshot}
+                  />
+                </div>
               </div>
-            )}
-
-            {/* Commands Section */}
-            <div className="mb-8">
-              <SolutionCommands
-                onTooltipVisibilityChange={handleTooltipVisibilityChange}
-                isProcessing={!problemStatementData || !solutionData}
-                extraScreenshots={extraScreenshots}
-                credits={credits}
-                currentLanguage={currentLanguage}
-                setLanguage={setLanguage}
-              />
             </div>
+          )}
 
-            {/* Main Content */}
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              <div className="p-6 space-y-8">
+          {/* Navbar of commands with the SolutionsHelper */}
+          <SolutionCommands
+            onTooltipVisibilityChange={handleTooltipVisibilityChange}
+            isProcessing={!problemStatementData || !solutionData}
+            extraScreenshots={extraScreenshots}
+            credits={credits}
+            currentLanguage={currentLanguage}
+            setLanguage={setLanguage}
+          />
 
-                {/* Problem Statement - shown when no solution yet */}
+          {/* Main Content - Modified width constraints */}
+          <div className="w-full text-sm text-black bg-black/60 rounded-md">
+            <div className="rounded-lg overflow-hidden">
+              <div className="px-4 py-3 space-y-4 max-w-full">
                 {!solutionData && (
                   <>
                     <ContentSection
@@ -531,38 +512,32 @@ const Solutions: React.FC<SolutionsProps> = ({
                       isLoading={!problemStatementData}
                     />
                     {problemStatementData && (
-                      <div className="py-4">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                          <span className="text-sm text-gray-600 ml-2">Generating solutions...</span>
-                        </div>
+                      <div className="mt-4 flex">
+                        <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
+                          Generating solutions...
+                        </p>
                       </div>
                     )}
                   </>
                 )}
 
-                {/* Solution Content - shown when solution is available */}
                 {solutionData && (
                   <>
                     <ContentSection
                       title={`My Thoughts (${COMMAND_KEY} + Arrow keys to scroll)`}
                       content={
                         thoughtsData && (
-                          <div className="space-y-4">
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                              <div className="space-y-3">
-                                {thoughtsData.map((thought, index) => (
-                                  <div
-                                    key={index}
-                                    className="flex items-start gap-3"
-                                  >
-                                    <div className="w-2 h-2 rounded-full bg-blue-500 mt-2 shrink-0" />
-                                    <div className="text-gray-700">{thought}</div>
-                                  </div>
-                                ))}
-                              </div>
+                          <div className="space-y-3">
+                            <div className="space-y-1">
+                              {thoughtsData.map((thought, index) => (
+                                <div
+                                  key={index}
+                                  className="flex items-start gap-2"
+                                >
+                                  <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
+                                  <div>{thought}</div>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         )
@@ -588,6 +563,7 @@ const Solutions: React.FC<SolutionsProps> = ({
             </div>
           </div>
         </div>
+      </div>
       )}
     </>
   )
