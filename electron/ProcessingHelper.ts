@@ -127,6 +127,7 @@ export class ProcessingHelper {
 
   // Smart model selection based on problem type
   private getOptimalModel(problemType?: string): string {
+
     return "gemini-2.5-flash";
   }
 
@@ -390,7 +391,7 @@ export class ProcessingHelper {
 
       // Step 1: Extract problem info using optimized model selection
       const extractionModel = this.getOptimalModel(); // Start with flash for initial extraction
-
+      console.log(extractionModel);
       const geminiMessages: GeminiMessage[] = [
         {
           role: "user",
@@ -495,7 +496,7 @@ export class ProcessingHelper {
 
       // Use optimal model based on problem type
       const solutionModel = this.getOptimalModel(problemType);
-
+      console.log(solutionModel);
       const promptText = `
 Generate a detailed solution for the following coding/logical reasoning/quantitative/core computer science problem:
 
