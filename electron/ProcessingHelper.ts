@@ -760,9 +760,9 @@ ${problemInfo.example_output || "No example output provided."}
 LANGUAGE: ${language}
 
 I need the response in the following format:
-1. If it is a mcq question which has multiple options and only (problem_statement and options attributes) and if its a quantitative/logical problem then 1. Identify the problem type and relevant concepts, Define all variables and state any assumptions
-, Show all calculations with clear reasoning, Verify your answer makes intuitive sense.
-2. If it is a coding question and I want the code to be a clean, optimized implementation in ${language} following the ${problemInfo.function_signature} strictly.
+
+${problemInfo.problem_type==="MCQ"?`1. Identify the problem type and relevant concepts, Define all variables and state any assumptions
+, Show all calculations with clear reasoning, Verify your answer makes intuitive sense.`:`I want the code to be a clean, optimized implementation in ${language} following the ${problemInfo.function_signature} strictly.`}
 3. Your Thoughts: A list of key insights and reasoning behind your approach.
 4. If its a coding problem then I want the response to include time complexity and space complexity analysis.
 
