@@ -127,10 +127,7 @@ export class ProcessingHelper {
 
   // Smart model selection based on problem type
   private getOptimalModel(problemType?: string): string {
-    if (problemType === "MCQ") {
-      return "gemini-2.0-flash-exp"; // Use Pro for MCQ questions that need better reasoning
-    }
-    return "gemini-2.0-flash-exp"; // Use Flash for coding questions (faster)
+    return "gemini-2.5-flash";
   }
 
   private async makeGeminiRequest(
@@ -645,7 +642,7 @@ ${problemInfo.problem_type === "MCQ" ?
       const imageDataList = screenshots.map(screenshot => screenshot.data);
 
       // Use Flash model for debugging as it's typically sufficient
-      const debugModel = "gemini-2.0-flash-exp";
+      const debugModel = "gemini-2.5-flash-pro";
 
       const debugPrompt = `
 You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
