@@ -31,16 +31,16 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
     hiddenRenderContainer.style.position = 'absolute';
     hiddenRenderContainer.style.left = '-9999px';
     document.body.appendChild(hiddenRenderContainer);
-    
+
     // Create a root and render the LanguageSelector temporarily
     const root = createRoot(hiddenRenderContainer);
     root.render(
-      <LanguageSelector 
-        currentLanguage={currentLanguage} 
+      <LanguageSelector
+        currentLanguage={currentLanguage}
         setLanguage={() => {}}
       />
     );
-    
+
     // Use a small delay to ensure the component has rendered
     // 50ms is generally enough for React to complete a render cycle
     setTimeout(() => {
@@ -49,11 +49,11 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
       if (selectElement) {
         const options = Array.from(selectElement.options);
         const values = options.map(opt => opt.value);
-        
+
         // Find current language index
         const currentIndex = values.indexOf(currentLanguage);
         let newIndex = currentIndex;
-        
+
         if (direction === 'prev') {
           // Go to previous language
           newIndex = (currentIndex - 1 + values.length) % values.length;
@@ -61,13 +61,13 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
           // Default to next language
           newIndex = (currentIndex + 1) % values.length;
         }
-        
+
         if (newIndex !== currentIndex) {
           setLanguage(values[newIndex]);
           window.electronAPI.updateConfig({ language: values[newIndex] });
         }
       }
-      
+
       // Clean up
       root.unmount();
       document.body.removeChild(hiddenRenderContainer);
@@ -87,14 +87,14 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
       // Clear any local storage or electron-specific data
       localStorage.clear();
       sessionStorage.clear();
-      
+
       // Clear the API key in the configuration
       await window.electronAPI.updateConfig({
         apiKey: '',
       });
-      
+
       showToast('Success', 'Logged out successfully', 'success');
-      
+
       // Reload the app after a short delay
       setTimeout(() => {
         window.location.reload();
@@ -116,8 +116,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   return (
     <div>
       <div className="pt-2 w-fit">
-        <div className="text-xs text-white/90 backdrop-blur-md bg-black/60 rounded-lg py-2 px-4 flex items-center justify-center gap-4">
-          {/* Screenshot */}
+        <div className="text-xs text-black bg-white border border-gray-300 rounded-lg py-2 px-4 flex items-center justify-center gap-4">          {/* Screenshot */}
           <div
             className="flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
             onClick={async () => {
@@ -375,7 +374,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                             : "Take a screenshot first to generate a solution."}
                         </p>
                       </div>
-                      
+
                       {/* Delete Last Screenshot Command */}
                       <div
                         className={`cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${
@@ -385,7 +384,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                         }`}
                         onClick={async () => {
                           if (screenshotCount === 0) return
-                          
+
                           try {
                             const result = await window.electronAPI.deleteLastScreenshot()
                             if (!result.success) {
@@ -432,7 +431,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                     <div className="pt-3 mt-3 border-t border-white/10">
                       {/* Simplified Language Selector */}
                       <div className="mb-3 px-2">
-                        <div 
+                        <div
                           className="flex items-center justify-between cursor-pointer hover:bg-white/10 rounded px-2 py-1 transition-colors"
                           onClick={() => extractLanguagesAndUpdate('next')}
                           tabIndex={0}
