@@ -762,14 +762,11 @@ LANGUAGE: ${language}
 I need the response in the following format:
 
 ${problemInfo.problem_type==="MCQ"?`1. Identify the problem type and relevant concepts, Define all variables and state any assumptions
-, Show all calculations with clear reasoning, Verify your answer makes intuitive sense.`:`I want the code to be a clean, optimized implementation in ${language} following the ${problemInfo.function_signature} strictly.`}
-3. Your Thoughts: A list of key insights and reasoning behind your approach.
-4. If its a coding problem then I want the response to include time complexity and space complexity analysis.
-
-For complexity explanations, please be thorough. For example: "Time complexity: O(n) because we iterate through the array only once. This is optimal as we need to examine each element at least once to find the solution." or "Space complexity: O(n) because in the worst case, we store all elements in the hashmap. The additional space scales linearly with the input size."
-
-Your solution should be efficient, well-commented, and handle edge cases.
+, Show all calculations with clear reasoning, Verify your answer makes intuitive sense.`:`I want the code to be a clean, optimized implementation in ${language} following the ${problemInfo.function_signature} strictly. Also I want the response to include time complexity and space complexity analysis. Your solution should be efficient, well-commented, and handle edge cases.`}
+2. Your Thoughts: A list of key insights and reasoning behind your approach.
+3. Your final answer proper bold if its a MCQ question
 `;
+
 
       let responseContent;
 
