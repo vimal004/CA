@@ -7,7 +7,7 @@ import { OpenAI } from "openai"
 
 interface Config {
   apiKey: string;
-  apiProvider: "gemini";  // Added provider selection
+  apiProvider: "gemini" | "openai" | "anthropic";  // Added provider selection
   extractionModel: string;
   solutionModel: string;
   debuggingModel: string;

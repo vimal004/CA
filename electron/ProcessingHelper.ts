@@ -74,7 +74,22 @@ export class ProcessingHelper {
     try {
       const config = configHelper.loadConfig();
 
-      if (config.apiProvider === "openai") {
+       if (config.apiProvider === "gemini"){
+        // Gemini client initialization
+        this.openaiClient = null;
+        this.anthropicClient = null;
+        if (config.apiKey) {
+          this.geminiApiKey = config.apiKey;
+          console.log("Gemini API key set successfully");
+        } else {
+          this.openaiClient = null;
+          this.geminiApiKey = null;
+          this.anthropicClient = null;
+          console.warn("No API key available, Gemini client not initialized");
+        }
+       }
+
+      else if (config.apiProvider === "openai") {
         if (config.apiKey) {
           this.openaiClient = new OpenAI({
             apiKey: config.apiKey,
@@ -90,20 +105,8 @@ export class ProcessingHelper {
           this.anthropicClient = null;
           console.warn("No API key available, OpenAI client not initialized");
         }
-      } else if (config.apiProvider === "gemini"){
-        // Gemini client initialization
-        this.openaiClient = null;
-        this.anthropicClient = null;
-        if (config.apiKey) {
-          this.geminiApiKey = config.apiKey;
-          console.log("Gemini API key set successfully");
-        } else {
-          this.openaiClient = null;
-          this.geminiApiKey = null;
-          this.anthropicClient = null;
-          console.warn("No API key available, Gemini client not initialized");
-        }
-      } else if (config.apiProvider === "anthropic") {
+      }
+       else if (config.apiProvider === "anthropic") {
         // Reset other clients
         this.openaiClient = null;
         this.geminiApiKey = null;
