@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createRoot } from "react-dom/client"
 
 import { useToast } from "../../contexts/toast"
@@ -24,132 +24,145 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   const tooltipRef = useRef<HTMLDivElement>(null)
   const { showToast } = useToast()
 
-  // Extract the repeated language selection logic into a separate function
-  const extractLanguagesAndUpdate = (direction?: 'next' | 'prev') => {
-    // Create a hidden instance of LanguageSelector to extract languages
-    const hiddenRenderContainer = document.createElement('div');
-    hiddenRenderContainer.style.position = 'absolute';
-    hiddenRenderContainer.style.left = '-9999px';
-    document.body.appendChild(hiddenRenderContainer);
+  // Memoize screenshot text to prevent recalculation
+  const screenshotText = useMemo(() => {
+    const texts = [
+      "Take first screenshot",
+      "Take second screenshot",
+      "Take third screenshot",
+      "Take fourth screenshot",
+      "Take fifth screenshot"
+    ]
+    return screenshotCount < 5 ? texts[screenshotCount] : "Next will replace first screenshot"
+  }, [screenshotCount])
 
-    // Create a root and render the LanguageSelector temporarily
-    const root = createRoot(hiddenRenderContainer);
+  // Optimized language extraction with useCallback
+  const extractLanguagesAndUpdate = useCallback((direction?: 'next' | 'prev') => {
+    const hiddenRenderContainer = document.createElement('div')
+    hiddenRenderContainer.style.cssText = 'position:absolute;left:-9999px;'
+    document.body.appendChild(hiddenRenderContainer)
+
+    const root = createRoot(hiddenRenderContainer)
     root.render(
       <LanguageSelector
         currentLanguage={currentLanguage}
         setLanguage={() => {}}
       />
-    );
+    )
 
-    // Use a small delay to ensure the component has rendered
-    // 50ms is generally enough for React to complete a render cycle
     setTimeout(() => {
-      // Extract options from the rendered select element
-      const selectElement = hiddenRenderContainer.querySelector('select');
+      const selectElement = hiddenRenderContainer.querySelector('select')
       if (selectElement) {
-        const options = Array.from(selectElement.options);
-        const values = options.map(opt => opt.value);
-
-        // Find current language index
-        const currentIndex = values.indexOf(currentLanguage);
-        let newIndex = currentIndex;
-
-        if (direction === 'prev') {
-          // Go to previous language
-          newIndex = (currentIndex - 1 + values.length) % values.length;
-        } else {
-          // Default to next language
-          newIndex = (currentIndex + 1) % values.length;
-        }
+        const values = Array.from(selectElement.options, opt => opt.value)
+        const currentIndex = values.indexOf(currentLanguage)
+        const newIndex = direction === 'prev'
+          ? (currentIndex - 1 + values.length) % values.length
+          : (currentIndex + 1) % values.length
 
         if (newIndex !== currentIndex) {
-          setLanguage(values[newIndex]);
-          window.electronAPI.updateConfig({ language: values[newIndex] });
+          setLanguage(values[newIndex])
+          window.electronAPI.updateConfig({ language: values[newIndex] })
         }
       }
 
-      // Clean up
-      root.unmount();
-      document.body.removeChild(hiddenRenderContainer);
-    }, 50);
-  };
+      root.unmount()
+      document.body.removeChild(hiddenRenderContainer)
+    }, 50)
+  }, [currentLanguage, setLanguage])
 
   useEffect(() => {
-    let tooltipHeight = 0
-    if (tooltipRef.current && isTooltipVisible) {
-      tooltipHeight = tooltipRef.current.offsetHeight + 10
-    }
+    const tooltipHeight = tooltipRef.current && isTooltipVisible
+      ? tooltipRef.current.offsetHeight + 10
+      : 0
     onTooltipVisibilityChange(isTooltipVisible, tooltipHeight)
-  }, [isTooltipVisible])
+  }, [isTooltipVisible, onTooltipVisibilityChange])
 
-  const handleSignOut = async () => {
+  const handleSignOut = useCallback(async () => {
     try {
-      // Clear any local storage or electron-specific data
-      localStorage.clear();
-      sessionStorage.clear();
+      localStorage.clear()
+      sessionStorage.clear()
 
-      // Clear the API key in the configuration
-      await window.electronAPI.updateConfig({
-        apiKey: '',
-      });
+      await window.electronAPI.updateConfig({ apiKey: '' })
+      showToast('Success', 'Logged out successfully', 'success')
 
-      showToast('Success', 'Logged out successfully', 'success');
-
-      // Reload the app after a short delay
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
+      setTimeout(() => window.location.reload(), 1500)
     } catch (err) {
-      console.error("Error logging out:", err);
-      showToast('Error', 'Failed to log out', 'error');
+      console.error("Error logging out:", err)
+      showToast('Error', 'Failed to log out', 'error')
     }
-  }
+  }, [showToast])
 
-  const handleMouseEnter = () => {
-    setIsTooltipVisible(true)
-  }
+  const handleScreenshot = useCallback(async () => {
+    try {
+      const result = await window.electronAPI.triggerScreenshot()
+      if (!result.success) {
+        console.error("Failed to take screenshot:", result.error)
+        showToast("Error", "Failed to take screenshot", "error")
+      }
+    } catch (error) {
+      console.error("Error taking screenshot:", error)
+      showToast("Error", "Failed to take screenshot", "error")
+    }
+  }, [showToast])
 
-  const handleMouseLeave = () => {
-    setIsTooltipVisible(false)
-  }
+  const handleSolve = useCallback(async () => {
+    try {
+      const result = await window.electronAPI.triggerProcessScreenshots()
+      if (!result.success) {
+        console.error("Failed to process screenshots:", result.error)
+        showToast("Error", "Failed to process screenshots", "error")
+      }
+    } catch (error) {
+      console.error("Error processing screenshots:", error)
+      showToast("Error", "Failed to process screenshots", "error")
+    }
+  }, [showToast])
+
+  const handleDeleteLastScreenshot = useCallback(async () => {
+    if (screenshotCount === 0) return
+
+    try {
+      const result = await window.electronAPI.deleteLastScreenshot()
+      if (!result.success) {
+        console.error("Failed to delete last screenshot:", result.error)
+        showToast("Error", result.error || "Failed to delete screenshot", "error")
+      }
+    } catch (error) {
+      console.error("Error deleting screenshot:", error)
+      showToast("Error", "Failed to delete screenshot", "error")
+    }
+  }, [screenshotCount, showToast])
+
+  const handleToggleWindow = useCallback(async () => {
+    try {
+      const result = await window.electronAPI.toggleMainWindow()
+      if (!result.success) {
+        console.error("Failed to toggle window:", result.error)
+        showToast("Error", "Failed to toggle window", "error")
+      }
+    } catch (error) {
+      console.error("Error toggling window:", error)
+      showToast("Error", "Failed to toggle window", "error")
+    }
+  }, [showToast])
 
   return (
     <div>
       <div className="pt-2 w-fit">
-        <div className="text-xs text-black bg-white border border-gray-300 rounded-lg py-2 px-4 flex items-center justify-center gap-4">          {/* Screenshot */}
+        <div className="text-xs text-gray-800 bg-white border border-gray-300 rounded-lg py-2 px-4 flex items-center justify-center gap-4 shadow-sm">
+          {/* Screenshot */}
           <div
-            className="flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
-            onClick={async () => {
-              try {
-                const result = await window.electronAPI.triggerScreenshot()
-                if (!result.success) {
-                  console.error("Failed to take screenshot:", result.error)
-                  showToast("Error", "Failed to take screenshot", "error")
-                }
-              } catch (error) {
-                console.error("Error taking screenshot:", error)
-                showToast("Error", "Failed to take screenshot", "error")
-              }
-            }}
+            className="flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-gray-100 transition-colors"
+            onClick={handleScreenshot}
           >
             <span className="text-[11px] leading-none truncate">
-              {screenshotCount === 0
-                ? "Take first screenshot"
-                : screenshotCount === 1
-                ? "Take second screenshot"
-                : screenshotCount === 2
-                ? "Take third screenshot"
-                : screenshotCount === 3
-                ? "Take fourth screenshot"
-                : screenshotCount === 4
-                ? "Take fifth screenshot"
-                : "Next will replace first screenshot"}
+              {screenshotText}
             </span>
             <div className="flex gap-1">
-              <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
+              <button className="bg-gray-200 rounded-md px-1.5 py-1 text-[11px] leading-none text-gray-600">
                 {COMMAND_KEY}
               </button>
-              <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
+              <button className="bg-gray-200 rounded-md px-1.5 py-1 text-[11px] leading-none text-gray-600">
                 H
               </button>
             </div>
@@ -158,34 +171,18 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
           {/* Solve Command */}
           {screenshotCount > 0 && (
             <div
-              className={`flex flex-col cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${
+              className={`flex flex-col cursor-pointer rounded px-2 py-1.5 hover:bg-gray-100 transition-colors ${
                 credits <= 0 ? "opacity-50 cursor-not-allowed" : ""
               }`}
-              onClick={async () => {
-
-                try {
-                  const result =
-                    await window.electronAPI.triggerProcessScreenshots()
-                  if (!result.success) {
-                    console.error(
-                      "Failed to process screenshots:",
-                      result.error
-                    )
-                    showToast("Error", "Failed to process screenshots", "error")
-                  }
-                } catch (error) {
-                  console.error("Error processing screenshots:", error)
-                  showToast("Error", "Failed to process screenshots", "error")
-                }
-              }}
+              onClick={handleSolve}
             >
               <div className="flex items-center justify-between">
                 <span className="text-[11px] leading-none">Solve </span>
                 <div className="flex gap-1 ml-2">
-                  <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
+                  <button className="bg-gray-200 rounded-md px-1.5 py-1 text-[11px] leading-none text-gray-600">
                     {COMMAND_KEY}
                   </button>
-                  <button className="bg-white/10 rounded-md px-1.5 py-1 text-[11px] leading-none text-white/70">
+                  <button className="bg-gray-200 rounded-md px-1.5 py-1 text-[11px] leading-none text-gray-600">
                     ↵
                   </button>
                 </div>
@@ -194,16 +191,16 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
           )}
 
           {/* Separator */}
-          <div className="mx-2 h-4 w-px bg-white/20" />
+          <div className="mx-2 h-4 w-px bg-gray-300" />
 
           {/* Settings with Tooltip */}
           <div
             className="relative inline-block"
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
+            onMouseEnter={() => setIsTooltipVisible(true)}
+            onMouseLeave={() => setIsTooltipVisible(false)}
           >
             {/* Gear icon */}
-            <div className="w-4 h-4 flex items-center justify-center cursor-pointer text-white/70 hover:text-white/90 transition-colors">
+            <div className="w-4 h-4 flex items-center justify-center cursor-pointer text-gray-500 hover:text-gray-700 transition-colors">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 24 24"
@@ -226,149 +223,72 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                 className="absolute top-full left-0 mt-2 w-80 transform -translate-x-[calc(50%-12px)]"
                 style={{ zIndex: 100 }}
               >
-                {/* Add transparent bridge */}
                 <div className="absolute -top-2 right-0 w-full h-2" />
-                <div className="p-3 text-xs bg-black/80 backdrop-blur-md rounded-lg border border-white/10 text-white/90 shadow-lg">
+                <div className="p-3 text-xs bg-white/95 backdrop-blur-md rounded-lg border border-gray-200 text-gray-800 shadow-lg">
                   <div className="space-y-4">
-                    <h3 className="font-medium truncate">Keyboard Shortcuts</h3>
+                    <h3 className="font-medium truncate text-gray-900">Keyboard Shortcuts</h3>
                     <div className="space-y-3">
                       {/* Toggle Command */}
                       <div
-                        className="cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
-                        onClick={async () => {
-                          try {
-                            const result =
-                              await window.electronAPI.toggleMainWindow()
-                            if (!result.success) {
-                              console.error(
-                                "Failed to toggle window:",
-                                result.error
-                              )
-                              showToast(
-                                "Error",
-                                "Failed to toggle window",
-                                "error"
-                              )
-                            }
-                          } catch (error) {
-                            console.error("Error toggling window:", error)
-                            showToast(
-                              "Error",
-                              "Failed to toggle window",
-                              "error"
-                            )
-                          }
-                        }}
+                        className="cursor-pointer rounded px-2 py-1.5 hover:bg-gray-100 transition-colors"
+                        onClick={handleToggleWindow}
                       >
                         <div className="flex items-center justify-between">
                           <span className="truncate">Toggle Window</span>
                           <div className="flex gap-1 flex-shrink-0">
-                            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                            <span className="bg-gray-200 px-1.5 py-0.5 rounded text-[10px] leading-none text-gray-600">
                               {COMMAND_KEY}
                             </span>
-                            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                            <span className="bg-gray-200 px-1.5 py-0.5 rounded text-[10px] leading-none text-gray-600">
                               B
                             </span>
                           </div>
                         </div>
-                        <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
+                        <p className="text-[10px] leading-relaxed text-gray-600 truncate mt-1">
                           Show or hide this window.
                         </p>
                       </div>
 
                       {/* Screenshot Command */}
                       <div
-                        className="cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors"
-                        onClick={async () => {
-                          try {
-                            const result =
-                              await window.electronAPI.triggerScreenshot()
-                            if (!result.success) {
-                              console.error(
-                                "Failed to take screenshot:",
-                                result.error
-                              )
-                              showToast(
-                                "Error",
-                                "Failed to take screenshot",
-                                "error"
-                              )
-                            }
-                          } catch (error) {
-                            console.error("Error taking screenshot:", error)
-                            showToast(
-                              "Error",
-                              "Failed to take screenshot",
-                              "error"
-                            )
-                          }
-                        }}
+                        className="cursor-pointer rounded px-2 py-1.5 hover:bg-gray-100 transition-colors"
+                        onClick={handleScreenshot}
                       >
                         <div className="flex items-center justify-between">
                           <span className="truncate">Take Screenshot</span>
                           <div className="flex gap-1 flex-shrink-0">
-                            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                            <span className="bg-gray-200 px-1.5 py-0.5 rounded text-[10px] leading-none text-gray-600">
                               {COMMAND_KEY}
                             </span>
-                            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                            <span className="bg-gray-200 px-1.5 py-0.5 rounded text-[10px] leading-none text-gray-600">
                               H
                             </span>
                           </div>
                         </div>
-                        <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
+                        <p className="text-[10px] leading-relaxed text-gray-600 truncate mt-1">
                           Take a screenshot of the problem description.
                         </p>
                       </div>
 
                       {/* Solve Command */}
                       <div
-                        className={`cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${
-                          screenshotCount > 0
-                            ? ""
-                            : "opacity-50 cursor-not-allowed"
+                        className={`cursor-pointer rounded px-2 py-1.5 hover:bg-gray-100 transition-colors ${
+                          screenshotCount > 0 ? "" : "opacity-50 cursor-not-allowed"
                         }`}
-                        onClick={async () => {
-                          if (screenshotCount === 0) return
-
-                          try {
-                            const result =
-                              await window.electronAPI.triggerProcessScreenshots()
-                            if (!result.success) {
-                              console.error(
-                                "Failed to process screenshots:",
-                                result.error
-                              )
-                              showToast(
-                                "Error",
-                                "Failed to process screenshots",
-                                "error"
-                              )
-                            }
-                          } catch (error) {
-                            console.error(
-                              "Error processing screenshots:",
-                              error
-                            )
-                            showToast(
-                              "Error",
-                              "Failed to process screenshots",
-                              "error"
-                            )
-                          }
-                        }}
+                        onClick={handleSolve}
                       >
                         <div className="flex items-center justify-between">
                           <span className="truncate">Solve</span>
                           <div className="flex gap-1 flex-shrink-0">
-                            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                            <span className="bg-gray-200 px-1.5 py-0.5 rounded text-[10px] leading-none text-gray-600">
                               {COMMAND_KEY}
                             </span>
-                            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                            <span className="bg-gray-200 px-1.5 py-0.5 rounded text-[10px] leading-none text-gray-600">
                               ↵
                             </span>
                           </div>
                         </div>
-                        <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
+                        <p className="text-[10px] leading-relaxed text-gray-600 truncate mt-1">
                           {screenshotCount > 0
                             ? "Generate a solution based on the current problem."
                             : "Take a screenshot first to generate a solution."}
@@ -377,49 +297,23 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
 
                       {/* Delete Last Screenshot Command */}
                       <div
-                        className={`cursor-pointer rounded px-2 py-1.5 hover:bg-white/10 transition-colors ${
-                          screenshotCount > 0
-                            ? ""
-                            : "opacity-50 cursor-not-allowed"
+                        className={`cursor-pointer rounded px-2 py-1.5 hover:bg-gray-100 transition-colors ${
+                          screenshotCount > 0 ? "" : "opacity-50 cursor-not-allowed"
                         }`}
-                        onClick={async () => {
-                          if (screenshotCount === 0) return
-
-                          try {
-                            const result = await window.electronAPI.deleteLastScreenshot()
-                            if (!result.success) {
-                              console.error(
-                                "Failed to delete last screenshot:",
-                                result.error
-                              )
-                              showToast(
-                                "Error",
-                                result.error || "Failed to delete screenshot",
-                                "error"
-                              )
-                            }
-                          } catch (error) {
-                            console.error("Error deleting screenshot:", error)
-                            showToast(
-                              "Error",
-                              "Failed to delete screenshot",
-                              "error"
-                            )
-                          }
-                        }}
+                        onClick={handleDeleteLastScreenshot}
                       >
                         <div className="flex items-center justify-between">
                           <span className="truncate">Delete Last Screenshot</span>
                           <div className="flex gap-1 flex-shrink-0">
-                            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                            <span className="bg-gray-200 px-1.5 py-0.5 rounded text-[10px] leading-none text-gray-600">
                               {COMMAND_KEY}
                             </span>
-                            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] leading-none">
+                            <span className="bg-gray-200 px-1.5 py-0.5 rounded text-[10px] leading-none text-gray-600">
                               L
                             </span>
                           </div>
                         </div>
-                        <p className="text-[10px] leading-relaxed text-white/70 truncate mt-1">
+                        <p className="text-[10px] leading-relaxed text-gray-600 truncate mt-1">
                           {screenshotCount > 0
                             ? "Remove the most recently taken screenshot."
                             : "No screenshots to delete."}
@@ -428,25 +322,25 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                     </div>
 
                     {/* Separator and Log Out */}
-                    <div className="pt-3 mt-3 border-t border-white/10">
+                    <div className="pt-3 mt-3 border-t border-gray-200">
                       {/* Simplified Language Selector */}
                       <div className="mb-3 px-2">
                         <div
-                          className="flex items-center justify-between cursor-pointer hover:bg-white/10 rounded px-2 py-1 transition-colors"
+                          className="flex items-center justify-between cursor-pointer hover:bg-gray-100 rounded px-2 py-1 transition-colors"
                           onClick={() => extractLanguagesAndUpdate('next')}
                           tabIndex={0}
                           onKeyDown={(e) => {
                             if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-                              extractLanguagesAndUpdate('prev');
+                              extractLanguagesAndUpdate('prev')
                             } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-                              extractLanguagesAndUpdate('next');
+                              extractLanguagesAndUpdate('next')
                             }
                           }}
                         >
-                          <span className="text-[11px] text-white/70">Language</span>
+                          <span className="text-[11px] text-gray-600">Language</span>
                           <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-white/90">{currentLanguage}</span>
-                            <div className="text-white/40 text-[8px]">
+                            <span className="text-[11px] text-gray-800">{currentLanguage}</span>
+                            <div className="text-gray-400 text-[8px]">
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
                                 <path d="M7 13l5 5 5-5M7 6l5 5 5-5"/>
                               </svg>
@@ -457,10 +351,10 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
 
                       {/* API Key Settings */}
                       <div className="mb-3 px-2 space-y-1">
-                        <div className="flex items-center justify-between text-[13px] font-medium text-white/90">
+                        <div className="flex items-center justify-between text-[13px] font-medium text-gray-800">
                           <span>OpenAI API Settings</span>
                           <button
-                            className="bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-[11px]"
+                            className="bg-gray-200 hover:bg-gray-300 px-2 py-1 rounded text-[11px] text-gray-700"
                             onClick={() => window.electronAPI.openSettingsPortal()}
                           >
                             Settings
@@ -470,7 +364,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
 
                       <button
                         onClick={handleSignOut}
-                        className="flex items-center gap-2 text-[11px] text-red-400 hover:text-red-300 transition-colors w-full"
+                        className="flex items-center gap-2 text-[11px] text-red-600 hover:text-red-700 transition-colors w-full"
                       >
                         <div className="w-4 h-4 flex items-center justify-center">
                           <svg
