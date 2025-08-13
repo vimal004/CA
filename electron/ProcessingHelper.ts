@@ -127,7 +127,6 @@ export class ProcessingHelper {
 
   // Smart model selection based on problem type
   private getOptimalModel(problemType?: string): string {
-
     return "gemini-2.5-flash";
   }
 
@@ -146,8 +145,10 @@ export class ProcessingHelper {
         {
           contents: messages,
           generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 4000
+            temperature: 0.1,
+            maxOutputTokens: 8192,
+            topP: 0.8,
+            topK: 40
           }
         },
         { signal }
@@ -159,7 +160,15 @@ export class ProcessingHelper {
         throw new Error("Empty response from Gemini API");
       }
 
-      return responseData.candidates[0].content.parts[0].text;
+      const candidate = responseData.candidates[0];
+
+      // Check if response was truncated due to token limit
+      if (candidate.finishReason === 'MAX_TOKENS') {
+        console.warn("Response was truncated due to token limit, retrying with shorter prompt");
+        throw new Error("TRUNCATED_RESPONSE");
+      }
+
+      return candidate.content.parts[0].text;
     } catch (error: any) {
       if (axios.isCancel(error)) {
         throw error;
@@ -390,15 +399,14 @@ export class ProcessingHelper {
       }
 
       // Step 1: Extract problem info using optimized model selection
-      const extractionModel = this.getOptimalModel(); // Start with flash for initial extraction
+      const extractionModel = this.getOptimalModel();
       console.log(extractionModel);
       const geminiMessages: GeminiMessage[] = [
         {
           role: "user",
           parts: [
             {
-              text: `You are a challenge interpreter. Analyze the screenshots of the problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, function_signature, example_input, example_output, problem_type:"coding" if its a coding question. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.
-              If the problem is not a coding rather a mcq then return the relevant information i.e (as JSON attributes "problem_statement", "options", problem_type:"MCQ" ) strictly.`
+              text: `You are a challenge interpreter. Analyze the screenshots and extract all relevant information. Return ONLY a JSON object with these fields: problem_statement, constraints, function_signature, example_input, example_output, problem_type ("coding" or "MCQ"). For MCQ problems, include "options" field instead of function_signature. Preferred language: ${language}.`
             },
             ...imageDataList.map(data => ({
               inlineData: {
@@ -426,7 +434,7 @@ export class ProcessingHelper {
 
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
-          message: "Problem analyzed successfully. Preparing to generate solution...",
+          message: "Problem analyzed successfully. Generating solution...",
           progress: 40
         });
       }
@@ -489,124 +497,194 @@ export class ProcessingHelper {
 
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
-          message: "Creating optimal solution with detailed explanations...",
+          message: "Deep analysis in progress...",
           progress: 60
         });
       }
 
-      // Use optimal model based on problem type
       const solutionModel = this.getOptimalModel(problemType);
       console.log(solutionModel);
-      const promptText = `
-Generate a detailed solution for the following coding/logical reasoning/quantitative/core computer science problem:
 
-PROBLEM STATEMENT:
-${problemInfo.problem_statement}
+      let promptText: string;
+      let maxRetries = 2;
 
-OPTIONS:
-${problemInfo.options || "No specific options provided."}
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          if (problemInfo.problem_type === "MCQ") {
+            promptText = `You are an expert quantitative analyst. Solve this problem with maximum accuracy using systematic reasoning.
 
-CONSTRAINTS:
-${problemInfo.constraints || "No specific constraints provided."}
+PROBLEM: ${problemInfo.problem_statement}
+OPTIONS: ${problemInfo.options || ""}
 
-EXAMPLE INPUT:
-${problemInfo.example_input || "No example input provided."}
+CRITICAL: Follow this EXACT methodology for 100% accuracy:
 
-EXAMPLE OUTPUT:
-${problemInfo.example_output || "No example output provided."}
+STEP 1 - PROBLEM ANALYSIS:
+• Identify the exact problem type (probability, statistics, calculus, algebra, etc.)
+• Extract ALL given values and their units/constraints
+• Determine what is being asked (be very specific)
+• Note any potential traps or common misconceptions
 
-LANGUAGE: ${language}
+STEP 2 - SOLUTION STRATEGY:
+• Choose the most appropriate formula/method
+• Verify all assumptions are valid
+• Plan your calculation steps in logical order
+• Double-check for any edge cases or special conditions
 
-I need the response in the following format:
+STEP 3 - DETAILED CALCULATION:
+• Show EVERY calculation step with intermediate results
+• Use proper mathematical notation
+• Verify calculations at each step
+• Cross-check your work with alternative methods if possible
 
-${problemInfo.problem_type === "MCQ" ?
-  `1. Identify the problem type and relevant concepts, Define all variables and state any assumptions, Show all calculations with clear reasoning, Verify your answer makes intuitive sense.` :
-  `I want the code to be a clean, optimized implementation in ${language} following the ${problemInfo.function_signature} strictly. Also I want the response to include time complexity and space complexity analysis. Your solution should be efficient, well-commented, and handle edge cases.`
-}
-2. Your Thoughts: A list of key insights and reasoning behind your approach.
-3. Your final answer proper bold if its a MCQ question
-`;
+STEP 4 - ANSWER VERIFICATION:
+• Check if your answer makes intuitive sense
+• Verify units are correct
+• Ensure answer falls within expected range
+• Compare against options to confirm exact match
 
-      const geminiMessages = [
-        {
-          role: "user",
-          parts: [
+STEP 5 - FINAL ANSWER:
+State your final answer as: **ANSWER: [OPTION LETTER]**
+
+Remember: Accuracy is paramount. Take time to verify each step. Show all work clearly.`;
+
+          } else {
+            promptText = `You are an expert competitive programmer. Solve this coding challenge with maximum correctness and efficiency.
+
+PROBLEM: ${problemInfo.problem_statement}
+CONSTRAINTS: ${problemInfo.constraints || "Standard competitive programming constraints"}
+INPUT: ${problemInfo.example_input || "See problem description"}
+OUTPUT: ${problemInfo.example_output || "See problem description"}
+SIGNATURE: ${problemInfo.function_signature || `def solution(): # ${language}`}
+
+SYSTEMATIC APPROACH for PERFECT SOLUTION:
+
+STEP 1 - PROBLEM COMPREHENSION:
+• Identify the core algorithm/data structure needed
+• Understand input/output format precisely
+• Analyze time/space constraints and their implications
+• Spot edge cases and boundary conditions
+
+STEP 2 - ALGORITHM DESIGN:
+• Choose optimal algorithm (greedy, DP, graph, etc.)
+• Plan data structures for efficient access
+• Outline step-by-step solution logic
+• Consider alternative approaches and justify choice
+
+STEP 3 - IMPLEMENTATION STRATEGY:
+• Write clean, readable, and efficient code
+• Handle all edge cases explicitly
+• Use meaningful variable names
+• Add critical comments for complex logic
+
+STEP 4 - VERIFICATION:
+• Trace through examples manually
+• Test boundary conditions
+• Verify algorithm correctness
+• Ensure code handles all constraints
+
+Provide your solution as:
+\`\`\`${language}
+[Your complete, production-ready code here]
+\`\`\`
+
+CRITICAL INSIGHTS:
+• [List 3-4 key algorithmic insights that make this solution work]
+
+Focus on CORRECTNESS first, then efficiency. Your code must handle ALL test cases.`;
+          }
+
+          const geminiMessages = [
             {
-              text: `You are an expert coding interview assistant. Provide a clear, optimal solution with detailed explanations for this problem:\n\n${promptText}`
+              role: "user",
+              parts: [{ text: promptText }]
             }
-          ]
-        }
-      ];
+          ];
 
-      const responseContent = await this.makeGeminiRequest(geminiMessages, solutionModel, signal);
+          const responseContent = await this.makeGeminiRequest(geminiMessages, solutionModel, signal);
 
-      // Extract parts from the response
-      const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
-      const code = codeMatch ? codeMatch[1].trim() : responseContent;
+          // Process the response
+          const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
+          const code = codeMatch ? codeMatch[1].trim() : responseContent;
 
-      // Extract thoughts
-      const thoughtsRegex = /(?:Thoughts:|Key Insights:|Reasoning:|Approach:)([\s\S]*?)(?:Time complexity:|$)/i;
-      const thoughtsMatch = responseContent.match(thoughtsRegex);
-      let thoughts: string[] = [];
+          // Extract insights/thoughts with improved parsing
+          const insightsRegex = /(?:critical insights?|key insights?|insights?|thoughts?|approach)[:\s]*\n?([\s\S]*?)(?:$|(?=\n\s*(?:answer|final|solution|code|```|\*\*)))/i;
+          const insightsMatch = responseContent.match(insightsRegex);
+          let thoughts: string[] = [];
 
-      if (thoughtsMatch && thoughtsMatch[1]) {
-        const bulletPoints = thoughtsMatch[1].match(/(?:^|\n)\s*(?:[-*•]|\d+\.)\s*(.*)/g);
-        if (bulletPoints) {
-          thoughts = bulletPoints.map(point =>
-            point.replace(/^\s*(?:[-*•]|\d+\.)\s*/, '').trim()
-          ).filter(Boolean);
-        } else {
-          thoughts = thoughtsMatch[1].split('\n')
-            .map((line) => line.trim())
-            .filter(Boolean);
-        }
-      }
+          if (insightsMatch && insightsMatch[1]) {
+            const bulletPoints = insightsMatch[1].match(/(?:^|\n)\s*[•\-\*]\s*([^\n]+)/g);
+            if (bulletPoints) {
+              thoughts = bulletPoints.map(point =>
+                point.replace(/^\s*[•\-\*]\s*/, '').trim()
+              ).filter(line => line.length > 10).slice(0, 4);
+            } else {
+              thoughts = insightsMatch[1].split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 10 && !line.includes('```'))
+                .slice(0, 4);
+            }
+          }
 
-      // Extract complexity information
-      const timeComplexityPattern = /Time complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:Space complexity|$))/i;
-      const spaceComplexityPattern = /Space complexity:?\s*([^\n]+(?:\n[^\n]+)*?)(?=\n\s*(?:[A-Z]|$))/i;
+          // Fallback thoughts based on problem type
+          if (thoughts.length === 0) {
+            if (problemInfo.problem_type === "MCQ") {
+              thoughts = ["Systematic quantitative analysis with step-by-step verification"];
+            } else {
+              thoughts = ["Optimal algorithm design with comprehensive edge case handling"];
+            }
+          }
 
-      let timeComplexity = "O(n) - Linear time complexity because we only iterate through the array once. Each element is processed exactly one time, and the hashmap lookups are O(1) operations.";
-      let spaceComplexity = "O(n) - Linear space complexity because we store elements in the hashmap. In the worst case, we might need to store all elements before finding the solution pair.";
+          const formattedResponse = {
+            code: code,
+            thoughts: thoughts
+          };
 
-      const timeMatch = responseContent.match(timeComplexityPattern);
-      if (timeMatch && timeMatch[1]) {
-        timeComplexity = timeMatch[1].trim();
-        if (!timeComplexity.match(/O\([^)]+\)/i)) {
-          timeComplexity = `O(n) - ${timeComplexity}`;
-        } else if (!timeComplexity.includes('-') && !timeComplexity.includes('because')) {
-          const notationMatch = timeComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = timeComplexity.replace(notation, '').trim();
-            timeComplexity = `${notation} - ${rest}`;
+          return { success: true, data: formattedResponse };
+
+        } catch (error: any) {
+          if (error.message === "TRUNCATED_RESPONSE" && attempt < maxRetries) {
+            console.log(`Attempt ${attempt + 1} truncated, retrying with focused prompt...`);
+
+            if (problemInfo.problem_type === "MCQ") {
+              promptText = `Solve quantitatively with systematic approach:
+
+PROBLEM: ${problemInfo.problem_statement}
+OPTIONS: ${problemInfo.options}
+
+METHOD:
+1. Identify problem type and extract all values
+2. Apply correct formula with step-by-step calculation
+3. Verify result makes sense and matches an option
+4. State final answer as: **ANSWER: [OPTION]**
+
+Show detailed work. Accuracy is critical.`;
+            } else {
+              promptText = `Code solution in ${language}:
+
+PROBLEM: ${problemInfo.problem_statement}
+CONSTRAINTS: ${problemInfo.constraints}
+
+APPROACH:
+1. Choose optimal algorithm/data structure
+2. Handle all edge cases and constraints
+3. Implement clean, efficient code
+4. Verify correctness
+
+\`\`\`${language}
+[Complete solution]
+\`\`\`
+
+Key insights (3-4 points).`;
+            }
+            continue;
+          } else {
+            throw error;
           }
         }
       }
 
-      const spaceMatch = responseContent.match(spaceComplexityPattern);
-      if (spaceMatch && spaceMatch[1]) {
-        spaceComplexity = spaceMatch[1].trim();
-        if (!spaceComplexity.match(/O\([^)]+\)/i)) {
-          spaceComplexity = `O(n) - ${spaceComplexity}`;
-        } else if (!spaceComplexity.includes('-') && !spaceComplexity.includes('because')) {
-          const notationMatch = spaceComplexity.match(/O\([^)]+\)/i);
-          if (notationMatch) {
-            const notation = notationMatch[0];
-            const rest = spaceComplexity.replace(notation, '').trim();
-            spaceComplexity = `${notation} - ${rest}`;
-          }
-        }
-      }
+      throw new Error("Failed to generate complete solution after retries");
 
-      const formattedResponse = {
-        code: code,
-        thoughts: thoughts.length > 0 ? thoughts : ["Solution approach based on efficiency and readability"],
-        time_complexity: timeComplexity,
-        space_complexity: spaceComplexity
-      };
-
-      return { success: true, data: formattedResponse };
     } catch (error: any) {
       if (axios.isCancel(error)) {
         return {
@@ -641,33 +719,22 @@ ${problemInfo.problem_type === "MCQ" ?
       }
 
       const imageDataList = screenshots.map(screenshot => screenshot.data);
+      const debugModel = "gemini-2.5-flash";
 
-      // Use Flash model for debugging as it's typically sufficient
-      const debugModel = "gemini-2.5-flash-pro";
+      const debugPrompt = `Debug help for: "${problemInfo.problem_statement}" in ${language}
 
-      const debugPrompt = `
-You are a coding interview assistant helping debug and improve solutions. Analyze these screenshots which include either error messages, incorrect outputs, or test cases, and provide detailed debugging help.
+Analyze these screenshots (errors/outputs/tests) and provide:
 
-I'm solving this coding problem: "${problemInfo.problem_statement}" in ${language}. I need help with debugging or improving my solution.
-
-YOUR RESPONSE MUST FOLLOW THIS EXACT STRUCTURE WITH THESE SECTION HEADERS:
 ### Issues Identified
-- List each issue as a bullet point with clear explanation
+- List specific problems found
 
-### Specific Improvements and Corrections
-- List specific code changes needed as bullet points
-
-### Optimizations
-- List any performance optimizations if applicable
-
-### Explanation of Changes Needed
-Here provide a clear explanation of why the changes are needed
+### Specific Improvements
+- List exact code changes needed
 
 ### Key Points
-- Summary bullet points of the most important takeaways
+- Most important takeaways
 
-If you include code examples, use proper markdown code blocks with language specification (e.g. \`\`\`java).
-`;
+Be concise and specific. Use code blocks for examples.`;
 
       const geminiMessages = [
         {
@@ -686,7 +753,7 @@ If you include code examples, use proper markdown code blocks with language spec
 
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
-          message: "Analyzing code and generating debug feedback with Gemini...",
+          message: "Analyzing debug information...",
           progress: 60
         });
       }
@@ -706,27 +773,15 @@ If you include code examples, use proper markdown code blocks with language spec
         extractedCode = codeMatch[1].trim();
       }
 
-      let formattedDebugContent = debugContent;
-
-      if (!debugContent.includes('# ') && !debugContent.includes('## ')) {
-        formattedDebugContent = debugContent
-          .replace(/issues identified|problems found|bugs found/i, '## Issues Identified')
-          .replace(/code improvements|improvements|suggested changes/i, '## Code Improvements')
-          .replace(/optimizations|performance improvements/i, '## Optimizations')
-          .replace(/explanation|detailed analysis/i, '## Explanation');
-      }
-
-      const bulletPoints = formattedDebugContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
+      const bulletPoints = debugContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
       const thoughts = bulletPoints
         ? bulletPoints.map(point => point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, '').trim()).slice(0, 5)
         : ["Debug analysis based on your screenshots"];
 
       const response = {
         code: extractedCode,
-        debug_analysis: formattedDebugContent,
-        thoughts: thoughts,
-        time_complexity: "N/A - Debug mode",
-        space_complexity: "N/A - Debug mode"
+        debug_analysis: debugContent,
+        thoughts: thoughts
       };
 
       return { success: true, data: response };
