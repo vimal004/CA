@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
-import { dracula } from "react-syntax-highlighter/dist/esm/styles/prism"
+import { prism } from "react-syntax-highlighter/dist/esm/styles/prism"
 
 import ScreenshotQueue from "../components/Queue/ScreenshotQueue"
 
@@ -22,22 +22,23 @@ export const ContentSection = ({
   isLoading: boolean
 }) => (
   <div className="space-y-2">
-    <h2 className="text-[13px] font-medium text-white tracking-wide">
+    <h2 className="text-[13px] font-medium text-gray-900 tracking-wide">
       {title}
     </h2>
     {isLoading ? (
       <div className="mt-4 flex">
-        <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
+        <p className="text-xs text-gray-500">
           Extracting problem statement...
         </p>
       </div>
     ) : (
-      <div className="text-[13px] leading-[1.4] text-gray-100 max-w-[600px]">
+      <div className="text-[13px] leading-[1.4] text-gray-700 max-w-[600px]">
         {content}
       </div>
     )}
   </div>
 )
+
 const SolutionSection = ({
   title,
   content,
@@ -62,13 +63,13 @@ const SolutionSection = ({
 
   return (
     <div className="space-y-2 relative">
-      <h2 className="text-[13px] font-medium text-white tracking-wide">
+      <h2 className="text-[13px] font-medium text-gray-900 tracking-wide">
         {title}
       </h2>
       {isLoading ? (
         <div className="space-y-1.5">
           <div className="mt-4 flex">
-            <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
+            <p className="text-xs text-gray-500">
               Loading solutions...
             </p>
           </div>
@@ -77,21 +78,21 @@ const SolutionSection = ({
         <div className="w-full relative">
           <button
             onClick={copyToClipboard}
-            className="absolute top-2 right-2 text-xs text-white bg-white/10 hover:bg-white/20 rounded px-2 py-1 transition"
+            className="absolute top-2 right-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded px-2 py-1"
           >
             {copied ? "Copied!" : "Copy"}
           </button>
           <SyntaxHighlighter
             showLineNumbers
             language={currentLanguage == "golang" ? "go" : currentLanguage}
-            style={dracula}
+            style={prism}
             customStyle={{
               maxWidth: "100%",
               margin: 0,
               padding: "1rem",
               whiteSpace: "pre-wrap",
               wordBreak: "break-all",
-              backgroundColor: "rgba(22, 27, 34, 0.5)"
+              backgroundColor: "#f8f9fa"
             }}
             wrapLongLines={true}
           >
@@ -134,26 +135,26 @@ export const ComplexitySection = ({
 
   return (
     <div className="space-y-2">
-      <h2 className="text-[13px] font-medium text-white tracking-wide">
+      <h2 className="text-[13px] font-medium text-gray-900 tracking-wide">
         Complexity
       </h2>
       {isLoading ? (
-        <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
+        <p className="text-xs text-gray-500">
           Calculating complexity...
         </p>
       ) : (
         <div className="space-y-3">
-          <div className="text-[13px] leading-[1.4] text-gray-100 bg-white/5 rounded-md p-3">
+          <div className="text-[13px] leading-[1.4] text-gray-700 bg-gray-50 rounded-md p-3">
             <div className="flex items-start gap-2">
-              <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
+              <div className="w-1 h-1 rounded-full bg-blue-500 mt-2 shrink-0" />
               <div>
                 <strong>Time:</strong> {formattedTimeComplexity}
               </div>
             </div>
           </div>
-          <div className="text-[13px] leading-[1.4] text-gray-100 bg-white/5 rounded-md p-3">
+          <div className="text-[13px] leading-[1.4] text-gray-700 bg-gray-50 rounded-md p-3">
             <div className="flex items-start gap-2">
-              <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
+              <div className="w-1 h-1 rounded-full bg-blue-500 mt-2 shrink-0" />
               <div>
                 <strong>Space:</strong> {formattedSpaceComplexity}
               </div>
@@ -171,6 +172,7 @@ export interface SolutionsProps {
   currentLanguage: string
   setLanguage: (language: string) => void
 }
+
 const Solutions: React.FC<SolutionsProps> = ({
   setView,
   credits,
@@ -233,19 +235,23 @@ const Solutions: React.FC<SolutionsProps> = ({
   const { showToast } = useToast()
 
   useEffect(() => {
-    // Height update logic
+    // Height update logic - throttled for better performance
+    let timeoutId: NodeJS.Timeout
     const updateDimensions = () => {
-      if (contentRef.current) {
-        let contentHeight = contentRef.current.scrollHeight
-        const contentWidth = contentRef.current.scrollWidth
-        if (isTooltipVisible) {
-          contentHeight += tooltipHeight
+      clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => {
+        if (contentRef.current) {
+          let contentHeight = contentRef.current.scrollHeight
+          const contentWidth = contentRef.current.scrollWidth
+          if (isTooltipVisible) {
+            contentHeight += tooltipHeight
+          }
+          window.electronAPI.updateContentDimensions({
+            width: contentWidth,
+            height: contentHeight
+          })
         }
-        window.electronAPI.updateContentDimensions({
-          width: contentWidth,
-          height: contentHeight
-        })
-      }
+      }, 100) // Throttle updates
     }
 
     // Initialize resize observer
@@ -394,6 +400,7 @@ const Solutions: React.FC<SolutionsProps> = ({
     ]
 
     return () => {
+      clearTimeout(timeoutId)
       resizeObserver.disconnect()
       cleanupFunctions.forEach((cleanup) => cleanup())
     }
@@ -473,97 +480,97 @@ const Solutions: React.FC<SolutionsProps> = ({
           setLanguage={setLanguage}
         />
       ) : (
-        <div ref={contentRef} className="relative">
+        <div ref={contentRef} className="relative bg-white">
           <div className="space-y-3 px-4 py-3">
-          {/* Conditionally render the screenshot queue if solutionData is available */}
-          {solutionData && (
-            <div className="bg-transparent w-fit">
-              <div className="pb-3">
-                <div className="space-y-3 w-fit">
-                  <ScreenshotQueue
-                    isLoading={debugProcessing}
-                    screenshots={extraScreenshots}
-                    onDeleteScreenshot={handleDeleteExtraScreenshot}
-                  />
+            {/* Conditionally render the screenshot queue if solutionData is available */}
+            {solutionData && (
+              <div className="bg-transparent w-fit">
+                <div className="pb-3">
+                  <div className="space-y-3 w-fit">
+                    <ScreenshotQueue
+                      isLoading={debugProcessing}
+                      screenshots={extraScreenshots}
+                      onDeleteScreenshot={handleDeleteExtraScreenshot}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Navbar of commands with the SolutionsHelper */}
-          <SolutionCommands
-            onTooltipVisibilityChange={handleTooltipVisibilityChange}
-            isProcessing={!problemStatementData || !solutionData}
-            extraScreenshots={extraScreenshots}
-            credits={credits}
-            currentLanguage={currentLanguage}
-            setLanguage={setLanguage}
-          />
+            {/* Navbar of commands with the SolutionsHelper */}
+            <SolutionCommands
+              onTooltipVisibilityChange={handleTooltipVisibilityChange}
+              isProcessing={!problemStatementData || !solutionData}
+              extraScreenshots={extraScreenshots}
+              credits={credits}
+              currentLanguage={currentLanguage}
+              setLanguage={setLanguage}
+            />
 
-          {/* Main Content - Modified width constraints */}
-          <div className="w-full text-sm text-black bg-black/60 rounded-md">
-            <div className="rounded-lg overflow-hidden">
-              <div className="px-4 py-3 space-y-4 max-w-full">
-                {!solutionData && (
-                  <>
-                    <ContentSection
-                      title="Problem Statement"
-                      content={problemStatementData?.problem_statement}
-                      isLoading={!problemStatementData}
-                    />
-                    {problemStatementData && (
-                      <div className="mt-4 flex">
-                        <p className="text-xs bg-gradient-to-r from-gray-300 via-gray-100 to-gray-300 bg-clip-text text-transparent animate-pulse">
-                          Generating solutions...
-                        </p>
-                      </div>
-                    )}
-                  </>
-                )}
+            {/* Main Content - Modified width constraints */}
+            <div className="w-full text-sm text-gray-900 bg-white border border-gray-200 rounded-md">
+              <div className="rounded-lg overflow-hidden">
+                <div className="px-4 py-3 space-y-4 max-w-full">
+                  {!solutionData && (
+                    <>
+                      <ContentSection
+                        title="Problem Statement"
+                        content={problemStatementData?.problem_statement}
+                        isLoading={!problemStatementData}
+                      />
+                      {problemStatementData && (
+                        <div className="mt-4 flex">
+                          <p className="text-xs text-gray-500">
+                            Generating solutions...
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
 
-                {solutionData && (
-                  <>
-                    <ContentSection
-                      title={`My Thoughts (${COMMAND_KEY} + Arrow keys to scroll)`}
-                      content={
-                        thoughtsData && (
-                          <div className="space-y-3">
-                            <div className="space-y-1">
-                              {thoughtsData.map((thought, index) => (
-                                <div
-                                  key={index}
-                                  className="flex items-start gap-2"
-                                >
-                                  <div className="w-1 h-1 rounded-full bg-blue-400/80 mt-2 shrink-0" />
-                                  <div>{thought}</div>
-                                </div>
-                              ))}
+                  {solutionData && (
+                    <>
+                      <ContentSection
+                        title={`My Thoughts (${COMMAND_KEY} + Arrow keys to scroll)`}
+                        content={
+                          thoughtsData && (
+                            <div className="space-y-3">
+                              <div className="space-y-1">
+                                {thoughtsData.map((thought, index) => (
+                                  <div
+                                    key={index}
+                                    className="flex items-start gap-2"
+                                  >
+                                    <div className="w-1 h-1 rounded-full bg-blue-500 mt-2 shrink-0" />
+                                    <div>{thought}</div>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        )
-                      }
-                      isLoading={!thoughtsData}
-                    />
+                          )
+                        }
+                        isLoading={!thoughtsData}
+                      />
 
-                    <SolutionSection
-                      title="Solution"
-                      content={solutionData}
-                      isLoading={!solutionData}
-                      currentLanguage={currentLanguage}
-                    />
+                      <SolutionSection
+                        title="Solution"
+                        content={solutionData}
+                        isLoading={!solutionData}
+                        currentLanguage={currentLanguage}
+                      />
 
-                    <ComplexitySection
-                      timeComplexity={timeComplexityData}
-                      spaceComplexity={spaceComplexityData}
-                      isLoading={!timeComplexityData || !spaceComplexityData}
-                    />
-                  </>
-                )}
+                      <ComplexitySection
+                        timeComplexity={timeComplexityData}
+                        spaceComplexity={spaceComplexityData}
+                        isLoading={!timeComplexityData || !spaceComplexityData}
+                      />
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
       )}
     </>
   )
