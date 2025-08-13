@@ -534,8 +534,8 @@ export class ProcessingHelper {
               role: "user",
               parts: [
                 {
-                  text: `You are a challenge interpreter. Analyze the screenshots of the problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, function_signature(the names & types of parameters, function name/class name), example_input, example_output if its a coding question. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.
-                  If the problem is not a coding rather a mcq quantitative problem or logical reasoning task or core cs related then return the relevant information i.e (as 2 JSON attributes "problem_statement", "options") strictly.`
+                  text: `You are a challenge interpreter. Analyze the screenshots of the problem and extract all relevant information. Return the information in JSON format with these fields: problem_statement, constraints, function_signature, example_input, example_output, problem_type:"coding" if its a coding question. Just return the structured JSON without any other text. Preferred coding language we gonna use for this problem is ${language}.
+                  If the problem is not a coding rather a mcq then return the relevant information i.e (as JSON attributes "problem_statement", "options", problem_type:"MCQ" ) strictly.`
                 },
                 ...imageDataList.map(data => ({
                   inlineData: {
