@@ -34,18 +34,34 @@ export class ProcessingHelper {
   private deps: IProcessingHelperDeps
   private screenshotHelper: ScreenshotHelper
   private geminiApiKey: string | null = null
+  private axiosInstance: any
 
   // AbortControllers for API requests
   private currentProcessingAbortController: AbortController | null = null
   private currentExtraProcessingAbortController: AbortController | null = null
 
+  // Cache for repeated operations
+  private languageCache: string | null = null
+  private creditsCache: number | null = null
+
   constructor(deps: IProcessingHelperDeps) {
     this.deps = deps
     this.screenshotHelper = deps.getScreenshotHelper()
 
+    // Create optimized axios instance
+    this.axiosInstance = axios.default.create({
+      timeout: 35000, // 35s timeout instead of default
+      maxContentLength: 50 * 1024 * 1024, // 50MB
+      maxBodyLength: 50 * 1024 * 1024,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+
     this.initializeGeminiClient();
 
     configHelper.on('config-updated', () => {
+      this.languageCache = null // Clear cache on config update
       this.initializeGeminiClient();
     });
   }
@@ -69,7 +85,7 @@ export class ProcessingHelper {
 
   private async waitForInitialization(mainWindow: BrowserWindow): Promise<void> {
     let attempts = 0
-    const maxAttempts = 50 // 5 seconds total
+    const maxAttempts = 30 // Reduced from 50 to 30 (3 seconds)
 
     while (attempts < maxAttempts) {
       const isInitialized = await mainWindow.webContents.executeJavaScript(
@@ -79,15 +95,18 @@ export class ProcessingHelper {
       await new Promise((resolve) => setTimeout(resolve, 100))
       attempts++
     }
-    throw new Error("App failed to initialize after 5 seconds")
+    throw new Error("App failed to initialize after 3 seconds")
   }
 
   private async getCredits(): Promise<number> {
+    if (this.creditsCache !== null) return this.creditsCache
+
     const mainWindow = this.deps.getMainWindow()
     if (!mainWindow) return 999
 
     try {
       await this.waitForInitialization(mainWindow)
+      this.creditsCache = 999
       return 999
     } catch (error) {
       console.error("Error getting credits:", error)
@@ -96,9 +115,12 @@ export class ProcessingHelper {
   }
 
   private async getLanguage(): Promise<string> {
+    if (this.languageCache) return this.languageCache
+
     try {
       const config = configHelper.loadConfig();
       if (config.language) {
+        this.languageCache = config.language
         return config.language;
       }
 
@@ -111,6 +133,7 @@ export class ProcessingHelper {
           )
 
           if (typeof language === "string" && language !== undefined && language !== null) {
+            this.languageCache = language
             return language;
           }
         } catch (err) {
@@ -118,9 +141,11 @@ export class ProcessingHelper {
         }
       }
 
+      this.languageCache = "python"
       return "python";
     } catch (error) {
       console.error("Error getting language:", error)
+      this.languageCache = "python"
       return "python"
     }
   }
@@ -140,7 +165,7 @@ export class ProcessingHelper {
     }
 
     try {
-      const response = await axios.default.post(
+      const response = await this.axiosInstance.post(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.geminiApiKey}`,
         {
           contents: messages,
@@ -188,6 +213,30 @@ export class ProcessingHelper {
     }
   }
 
+  // Optimized screenshot loading with parallel processing
+  private async loadScreenshots(paths: string[]): Promise<Array<{ path: string; preview?: any; data: string }>> {
+    const validPaths = paths.filter(fs.existsSync)
+
+    if (validPaths.length === 0) {
+      throw new Error("No valid screenshot files found")
+    }
+
+    // Process screenshots in parallel for faster loading
+    const screenshots = await Promise.all(
+      validPaths.map(async (path) => {
+        try {
+          const data = fs.readFileSync(path).toString('base64')
+          return { path, data }
+        } catch (err) {
+          console.error(`Error reading screenshot ${path}:`, err);
+          return null;
+        }
+      })
+    )
+
+    return screenshots.filter(Boolean) as Array<{ path: string; data: string }>
+  }
+
   public async processScreenshots(): Promise<void> {
     const mainWindow = this.deps.getMainWindow()
     if (!mainWindow) return
@@ -216,37 +265,11 @@ export class ProcessingHelper {
         return;
       }
 
-      const existingScreenshots = screenshotQueue.filter(path => fs.existsSync(path));
-      if (existingScreenshots.length === 0) {
-        console.log("Screenshot files don't exist on disk");
-        mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS);
-        return;
-      }
-
       try {
         this.currentProcessingAbortController = new AbortController()
         const { signal } = this.currentProcessingAbortController
 
-        const screenshots = await Promise.all(
-          existingScreenshots.map(async (path) => {
-            try {
-              return {
-                path,
-                preview: await this.screenshotHelper.getImagePreview(path),
-                data: fs.readFileSync(path).toString('base64')
-              };
-            } catch (err) {
-              console.error(`Error reading screenshot ${path}:`, err);
-              return null;
-            }
-          })
-        )
-
-        const validScreenshots = screenshots.filter(Boolean);
-
-        if (validScreenshots.length === 0) {
-          throw new Error("Failed to load screenshot data");
-        }
+        const validScreenshots = await this.loadScreenshots(screenshotQueue)
 
         const result = await this.processScreenshotsHelper(validScreenshots, signal)
 
@@ -304,13 +327,6 @@ export class ProcessingHelper {
         return;
       }
 
-      const existingExtraScreenshots = extraScreenshotQueue.filter(path => fs.existsSync(path));
-      if (existingExtraScreenshots.length === 0) {
-        console.log("Extra screenshot files don't exist on disk");
-        mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS);
-        return;
-      }
-
       mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.DEBUG_START)
 
       this.currentExtraProcessingAbortController = new AbortController()
@@ -319,34 +335,10 @@ export class ProcessingHelper {
       try {
         const allPaths = [
           ...this.screenshotHelper.getScreenshotQueue(),
-          ...existingExtraScreenshots
+          ...extraScreenshotQueue
         ];
 
-        const screenshots = await Promise.all(
-          allPaths.map(async (path) => {
-            try {
-              if (!fs.existsSync(path)) {
-                console.warn(`Screenshot file does not exist: ${path}`);
-                return null;
-              }
-
-              return {
-                path,
-                preview: await this.screenshotHelper.getImagePreview(path),
-                data: fs.readFileSync(path).toString('base64')
-              };
-            } catch (err) {
-              console.error(`Error reading screenshot ${path}:`, err);
-              return null;
-            }
-          })
-        )
-
-        const validScreenshots = screenshots.filter(Boolean);
-
-        if (validScreenshots.length === 0) {
-          throw new Error("Failed to load screenshot data for debugging");
-        }
+        const validScreenshots = await this.loadScreenshots(allPaths)
 
         console.log("Combined screenshots for processing:", validScreenshots.map((s) => s.path))
 
@@ -387,7 +379,10 @@ export class ProcessingHelper {
     signal: AbortSignal
   ) {
     try {
-      const language = await this.getLanguage();
+      const [language] = await Promise.all([
+        this.getLanguage()
+      ])
+
       const mainWindow = this.deps.getMainWindow();
       const imageDataList = screenshots.map(screenshot => screenshot.data);
 
@@ -398,15 +393,14 @@ export class ProcessingHelper {
         });
       }
 
-      // Step 1: Extract problem info using optimized model selection
+      // Step 1: Extract problem info - OPTIMIZED PROMPT
       const extractionModel = this.getOptimalModel();
-      console.log(extractionModel);
       const geminiMessages: GeminiMessage[] = [
         {
           role: "user",
           parts: [
             {
-              text: `You are a challenge interpreter. Analyze the screenshots and extract all relevant information. Return ONLY a JSON object with these fields: problem_statement, constraints, function_signature, example_input, example_output, problem_type ("coding" or "MCQ"). For MCQ problems, include "options" field instead of function_signature. Preferred language: ${language}.`
+              text: `Extract problem info from screenshots. Return JSON with: problem_statement, constraints, function_signature, example_input, example_output, problem_type ("coding"/"MCQ"), options (if MCQ). Language: ${language}.`
             },
             ...imageDataList.map(data => ({
               inlineData: {
@@ -434,8 +428,8 @@ export class ProcessingHelper {
 
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
-          message: "Problem analyzed successfully. Generating solution...",
-          progress: 40
+          message: "Problem analyzed. Generating solution...",
+          progress: 50
         });
       }
 
@@ -448,7 +442,7 @@ export class ProcessingHelper {
           problemInfo
         );
 
-        // Generate solutions with optimal model based on problem type
+        // Generate solutions
         const solutionsResult = await this.generateSolutionsHelper(signal, problemInfo.problem_type);
         if (solutionsResult.success) {
           this.screenshotHelper.clearExtraScreenshotQueue();
@@ -497,193 +491,91 @@ export class ProcessingHelper {
 
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
-          message: "Deep analysis in progress...",
-          progress: 60
+          message: "Generating solution...",
+          progress: 70
         });
       }
 
       const solutionModel = this.getOptimalModel(problemType);
-      console.log(solutionModel);
 
+      // OPTIMIZED PROMPTS - Much more concise
       let promptText: string;
-      let maxRetries = 2;
 
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-          if (problemInfo.problem_type === "MCQ") {
-            promptText = `You are an expert quantitative analyst. Solve this problem with maximum accuracy using systematic reasoning.
-
-PROBLEM: ${problemInfo.problem_statement}
-OPTIONS: ${problemInfo.options || ""}
-
-CRITICAL: Follow this EXACT methodology for 100% accuracy:
-
-STEP 1 - PROBLEM ANALYSIS:
-• Identify the exact problem type (probability, statistics, calculus, algebra, etc.)
-• Extract ALL given values and their units/constraints
-• Determine what is being asked (be very specific)
-• Note any potential traps or common misconceptions
-
-STEP 2 - SOLUTION STRATEGY:
-• Choose the most appropriate formula/method
-• Verify all assumptions are valid
-• Plan your calculation steps in logical order
-• Double-check for any edge cases or special conditions
-
-STEP 3 - DETAILED CALCULATION:
-• Show EVERY calculation step with intermediate results
-• Use proper mathematical notation
-• Verify calculations at each step
-• Cross-check your work with alternative methods if possible
-
-STEP 4 - ANSWER VERIFICATION:
-• Check if your answer makes intuitive sense
-• Verify units are correct
-• Ensure answer falls within expected range
-• Compare against options to confirm exact match
-
-STEP 5 - FINAL ANSWER:
-State your final answer as: **ANSWER: [OPTION LETTER]**
-
-Remember: Accuracy is paramount. Take time to verify each step. Show all work clearly.`;
-
-          } else {
-            promptText = `You are an expert competitive programmer. Solve this coding challenge with maximum correctness and efficiency.
-
-PROBLEM: ${problemInfo.problem_statement}
-CONSTRAINTS: ${problemInfo.constraints || "Standard competitive programming constraints"}
-INPUT: ${problemInfo.example_input || "See problem description"}
-OUTPUT: ${problemInfo.example_output || "See problem description"}
-SIGNATURE: ${problemInfo.function_signature || `def solution(): # ${language}`}
-
-SYSTEMATIC APPROACH for PERFECT SOLUTION:
-
-STEP 1 - PROBLEM COMPREHENSION:
-• Identify the core algorithm/data structure needed
-• Understand input/output format precisely
-• Analyze time/space constraints and their implications
-• Spot edge cases and boundary conditions
-
-STEP 2 - ALGORITHM DESIGN:
-• Choose optimal algorithm (greedy, DP, graph, etc.)
-• Plan data structures for efficient access
-• Outline step-by-step solution logic
-• Consider alternative approaches and justify choice
-
-STEP 3 - IMPLEMENTATION STRATEGY:
-• Write clean, readable, and efficient code
-• Handle all edge cases explicitly
-• Use meaningful variable names
-• Add critical comments for complex logic
-
-STEP 4 - VERIFICATION:
-• Trace through examples manually
-• Test boundary conditions
-• Verify algorithm correctness
-• Ensure code handles all constraints
-
-Provide your solution as:
-\`\`\`${language}
-[Your complete, production-ready code here]
-\`\`\`
-
-CRITICAL INSIGHTS:
-• [List 3-4 key algorithmic insights that make this solution work]
-
-Focus on CORRECTNESS first, then efficiency. Your code must handle ALL test cases.`;
-          }
-
-          const geminiMessages = [
-            {
-              role: "user",
-              parts: [{ text: promptText }]
-            }
-          ];
-
-          const responseContent = await this.makeGeminiRequest(geminiMessages, solutionModel, signal);
-
-          // Process the response
-          const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
-          const code = codeMatch ? codeMatch[1].trim() : responseContent;
-
-          // Extract insights/thoughts with improved parsing
-          const insightsRegex = /(?:critical insights?|key insights?|insights?|thoughts?|approach)[:\s]*\n?([\s\S]*?)(?:$|(?=\n\s*(?:answer|final|solution|code|```|\*\*)))/i;
-          const insightsMatch = responseContent.match(insightsRegex);
-          let thoughts: string[] = [];
-
-          if (insightsMatch && insightsMatch[1]) {
-            const bulletPoints = insightsMatch[1].match(/(?:^|\n)\s*[•\-\*]\s*([^\n]+)/g);
-            if (bulletPoints) {
-              thoughts = bulletPoints.map(point =>
-                point.replace(/^\s*[•\-\*]\s*/, '').trim()
-              ).filter(line => line.length > 10).slice(0, 4);
-            } else {
-              thoughts = insightsMatch[1].split('\n')
-                .map(line => line.trim())
-                .filter(line => line.length > 10 && !line.includes('```'))
-                .slice(0, 4);
-            }
-          }
-
-          // Fallback thoughts based on problem type
-          if (thoughts.length === 0) {
-            if (problemInfo.problem_type === "MCQ") {
-              thoughts = ["Systematic quantitative analysis with step-by-step verification"];
-            } else {
-              thoughts = ["Optimal algorithm design with comprehensive edge case handling"];
-            }
-          }
-
-          const formattedResponse = {
-            code: code,
-            thoughts: thoughts
-          };
-
-          return { success: true, data: formattedResponse };
-
-        } catch (error: any) {
-          if (error.message === "TRUNCATED_RESPONSE" && attempt < maxRetries) {
-            console.log(`Attempt ${attempt + 1} truncated, retrying with focused prompt...`);
-
-            if (problemInfo.problem_type === "MCQ") {
-              promptText = `Solve quantitatively with systematic approach:
-
-PROBLEM: ${problemInfo.problem_statement}
-OPTIONS: ${problemInfo.options}
+      if (problemInfo.problem_type === "MCQ") {
+        promptText = `Solve: ${problemInfo.problem_statement}
+Options: ${problemInfo.options || ""}
 
 METHOD:
-1. Identify problem type and extract all values
-2. Apply correct formula with step-by-step calculation
-3. Verify result makes sense and matches an option
-4. State final answer as: **ANSWER: [OPTION]**
+1. Identify problem type & extract values
+2. Apply correct formula step-by-step
+3. Verify result matches option
+4. Final answer: **ANSWER: [LETTER]**
 
-Show detailed work. Accuracy is critical.`;
-            } else {
-              promptText = `Code solution in ${language}:
+Show work clearly. Accuracy critical.`;
+
+      } else {
+        promptText = `Code solution in ${language}:
 
 PROBLEM: ${problemInfo.problem_statement}
-CONSTRAINTS: ${problemInfo.constraints}
+CONSTRAINTS: ${problemInfo.constraints || "Standard constraints"}
 
 APPROACH:
 1. Choose optimal algorithm/data structure
-2. Handle all edge cases and constraints
-3. Implement clean, efficient code
+2. Handle edge cases & constraints
+3. Implement efficient solution
 4. Verify correctness
 
+Return:
 \`\`\`${language}
-[Complete solution]
+[Complete working code]
 \`\`\`
 
-Key insights (3-4 points).`;
-            }
-            continue;
-          } else {
-            throw error;
-          }
+KEY INSIGHTS: [3-4 bullet points explaining approach]`;
+      }
+
+      const geminiMessages = [
+        {
+          role: "user",
+          parts: [{ text: promptText }]
+        }
+      ];
+
+      const responseContent = await this.makeGeminiRequest(geminiMessages, solutionModel, signal);
+
+      // Process the response
+      const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
+      const code = codeMatch ? codeMatch[1].trim() : responseContent;
+
+      // Extract insights/thoughts
+      const insightsRegex = /(?:insights?|key points?|approach)[:\s]*\n?([\s\S]*?)(?:$|(?=\n\s*(?:answer|final|solution|code|```|\*\*)))/i;
+      const insightsMatch = responseContent.match(insightsRegex);
+      let thoughts: string[] = [];
+
+      if (insightsMatch && insightsMatch[1]) {
+        const bulletPoints = insightsMatch[1].match(/(?:^|\n)\s*[•\-\*]\s*([^\n]+)/g);
+        if (bulletPoints) {
+          thoughts = bulletPoints.map(point =>
+            point.replace(/^\s*[•\-\*]\s*/, '').trim()
+          ).filter(line => line.length > 10).slice(0, 4);
+        } else {
+          thoughts = insightsMatch[1].split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 10 && !line.includes('```'))
+            .slice(0, 4);
         }
       }
 
-      throw new Error("Failed to generate complete solution after retries");
+      // Fallback thoughts
+      if (thoughts.length === 0) {
+        thoughts = problemInfo.problem_type === "MCQ"
+          ? ["Systematic analysis with step verification"]
+          : ["Optimal algorithm with edge case handling"];
+      }
+
+      return {
+        success: true,
+        data: { code, thoughts }
+      };
 
     } catch (error: any) {
       if (axios.isCancel(error)) {
@@ -713,28 +605,27 @@ Key insights (3-4 points).`;
 
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
-          message: "Processing debug screenshots...",
-          progress: 30
+          message: "Analyzing debug screenshots...",
+          progress: 50
         });
       }
 
       const imageDataList = screenshots.map(screenshot => screenshot.data);
-      const debugModel = "gemini-2.5-flash";
 
-      const debugPrompt = `Debug help for: "${problemInfo.problem_statement}" in ${language}
+      // OPTIMIZED DEBUG PROMPT - Much more concise
+      const debugPrompt = `Debug help for: "${problemInfo.problem_statement}"
 
-Analyze these screenshots (errors/outputs/tests) and provide:
+Analyze screenshots and provide:
+### Issues Found
+- [List specific problems]
 
-### Issues Identified
-- List specific problems found
-
-### Specific Improvements
-- List exact code changes needed
+### Fixes Needed
+- [Exact code changes required]
 
 ### Key Points
-- Most important takeaways
+- [Important takeaways]
 
-Be concise and specific. Use code blocks for examples.`;
+Be specific. Use code blocks for examples.`;
 
       const geminiMessages = [
         {
@@ -751,14 +642,7 @@ Be concise and specific. Use code blocks for examples.`;
         }
       ];
 
-      if (mainWindow) {
-        mainWindow.webContents.send("processing-status", {
-          message: "Analyzing debug information...",
-          progress: 60
-        });
-      }
-
-      const debugContent = await this.makeGeminiRequest(geminiMessages, debugModel, signal);
+      const debugContent = await this.makeGeminiRequest(geminiMessages, "gemini-2.5-flash", signal);
 
       if (mainWindow) {
         mainWindow.webContents.send("processing-status", {
@@ -767,7 +651,7 @@ Be concise and specific. Use code blocks for examples.`;
         });
       }
 
-      let extractedCode = "// Debug mode - see analysis below";
+      let extractedCode = "// Debug analysis - see details below";
       const codeMatch = debugContent.match(/```(?:[a-zA-Z]+)?([\s\S]*?)```/);
       if (codeMatch && codeMatch[1]) {
         extractedCode = codeMatch[1].trim();
@@ -775,16 +659,17 @@ Be concise and specific. Use code blocks for examples.`;
 
       const bulletPoints = debugContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
       const thoughts = bulletPoints
-        ? bulletPoints.map(point => point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, '').trim()).slice(0, 5)
-        : ["Debug analysis based on your screenshots"];
+        ? bulletPoints.map(point => point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, '').trim()).slice(0, 4)
+        : ["Debug analysis based on screenshots"];
 
-      const response = {
-        code: extractedCode,
-        debug_analysis: debugContent,
-        thoughts: thoughts
+      return {
+        success: true,
+        data: {
+          code: extractedCode,
+          debug_analysis: debugContent,
+          thoughts: thoughts
+        }
       };
-
-      return { success: true, data: response };
     } catch (error: any) {
       console.error("Debug processing error:", error);
       return { success: false, error: error.message || "Failed to process debug request" };
@@ -808,6 +693,10 @@ Be concise and specific. Use code blocks for examples.`;
 
     this.deps.setHasDebugged(false)
     this.deps.setProblemInfo(null)
+
+    // Clear caches on cancel
+    this.languageCache = null
+    this.creditsCache = null
 
     const mainWindow = this.deps.getMainWindow()
     if (wasCancelled && mainWindow && !mainWindow.isDestroyed()) {
