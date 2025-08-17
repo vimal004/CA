@@ -1,4 +1,4 @@
-// ProcessingHelper.ts
+// ProcessingHelper.ts - Optimized Version
 import fs from "node:fs"
 import path from "node:path"
 import { ScreenshotHelper } from "./ScreenshotHelper"
@@ -7,7 +7,7 @@ import * as axios from "axios"
 import { app, BrowserWindow, dialog } from "electron"
 import { configHelper } from "./ConfigHelper"
 
-// Interface for Gemini API requests
+// Optimized interfaces
 interface GeminiMessage {
   role: string;
   parts: Array<{
@@ -21,14 +21,116 @@ interface GeminiMessage {
 
 interface GeminiResponse {
   candidates: Array<{
-    content: {
-      parts: Array<{
-        text: string;
-      }>;
-    };
+    content: { parts: Array<{ text: string; }>; };
     finishReason: string;
   }>;
 }
+
+// Prompt templates for better consistency and performance
+const PROMPT_TEMPLATES = {
+  EXTRACTION: (lang: string) => `Extract problem from screenshots. Return only JSON:
+{
+  "problem_statement": "exact problem text",
+  "constraints": "key constraints",
+  "function_signature": "if coding problem",
+  "example_input": "sample input",
+  "example_output": "expected output",
+  "problem_type": "coding|MCQ",
+  "options": ["if MCQ"]
+}
+Language: ${lang}. Be precise, no extra text.`,
+
+  CODING: (problem: string, constraints: string, lang: string) => `Solve in ${lang}:
+
+PROBLEM: ${problem}
+CONSTRAINTS: ${constraints}
+
+Requirements:
+- Optimal O(n) or O(log n) solution
+- Handle edge cases
+- Clean, readable code
+- No imports unless essential
+
+Return:
+\`\`\`${lang}
+[complete solution]
+\`\`\`
+
+APPROACH (3 bullet points max):
+• [Key insight 1]
+• [Algorithm choice]
+• [Complexity justification]`,
+
+  MCQ: (problem: string, options: string) => `Solve step-by-step:
+
+${problem}
+Options: ${options}
+
+METHOD:
+1. Extract given values
+2. Apply formula/theorem
+3. Calculate precisely
+4. Match to option
+
+Show work. End with: **ANSWER: [LETTER]**`,
+
+  DEBUG: (problem: string) => `Debug analysis for: ${problem}
+
+From screenshots, identify:
+### Issues Found
+- [Specific errors/problems]
+
+### Fixes Required
+- [Exact code changes]
+
+### Key Insights
+- [Important notes]
+
+Be concise. Use code blocks for examples.`,
+
+  QUANT: (problem: string, options: string) => `Quantitative problem:
+
+${problem}
+${options ? `Options: ${options}` : ''}
+
+SOLUTION:
+1. Identify problem type (probability/statistics/finance/etc)
+2. Apply relevant formula
+3. Calculate step-by-step
+4. Verify result
+
+Show calculations. ${options ? 'Final: **ANSWER: [LETTER]**' : ''}`,
+
+  LOGICAL: (problem: string, options: string) => `Logical reasoning:
+
+${problem}
+${options ? `Options: ${options}` : ''}
+
+APPROACH:
+1. Identify logical structure
+2. Apply reasoning rules
+3. Eliminate invalid options
+4. Verify conclusion
+
+${options ? 'Final: **ANSWER: [LETTER]**' : ''}`,
+
+  CS_THEORY: (problem: string, constraints: string, lang: string) => `CS Theory Problem:
+
+${problem}
+${constraints ? `Constraints: ${constraints}` : ''}
+
+SOLUTION:
+1. Identify algorithm/data structure needed
+2. Analyze time/space complexity
+3. Implement optimal solution
+4. Prove correctness
+
+\`\`\`${lang}
+[implementation]
+\`\`\`
+
+COMPLEXITY: Time O(?), Space O(?)`
+};
 
 export class ProcessingHelper {
   private deps: IProcessingHelperDeps
@@ -36,123 +138,105 @@ export class ProcessingHelper {
   private geminiApiKey: string | null = null
   private axiosInstance: any
 
-  // AbortControllers for API requests
-  private currentProcessingAbortController: AbortController | null = null
-  private currentExtraProcessingAbortController: AbortController | null = null
+  // Single abort controller for all requests
+  private abortController: AbortController | null = null
 
-  // Cache for repeated operations
-  private languageCache: string | null = null
-  private creditsCache: number | null = null
+  // Minimal caching
+  private cache: {
+    language?: string;
+    lastConfig?: number;
+  } = {}
 
   constructor(deps: IProcessingHelperDeps) {
     this.deps = deps
     this.screenshotHelper = deps.getScreenshotHelper()
 
-    // Create optimized axios instance
+    // Optimized axios instance
     this.axiosInstance = axios.default.create({
-      timeout: 35000, // 35s timeout instead of default
-      maxContentLength: 50 * 1024 * 1024, // 50MB
-      maxBodyLength: 50 * 1024 * 1024,
+      timeout: 25000, // Reduced timeout
+      maxContentLength: 10 * 1024 * 1024, // 10MB max
+      maxBodyLength: 10 * 1024 * 1024,
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
       }
     })
 
-    this.initializeGeminiClient();
-
+    this.initializeGeminiClient()
     configHelper.on('config-updated', () => {
-      this.languageCache = null // Clear cache on config update
-      this.initializeGeminiClient();
-    });
+      this.cache = {} // Clear cache
+      this.initializeGeminiClient()
+    })
   }
 
   private initializeGeminiClient(): void {
     try {
-      const config = configHelper.loadConfig();
-
-      if (config.apiKey) {
-        this.geminiApiKey = config.apiKey;
-        console.log("Gemini API key set successfully");
-      } else {
-        this.geminiApiKey = null;
-        console.warn("No Gemini API key available");
-      }
+      const config = configHelper.loadConfig()
+      this.geminiApiKey = config.apiKey || null
+      console.log(this.geminiApiKey ? "API key loaded" : "No API key")
     } catch (error) {
-      console.error("Failed to initialize Gemini client:", error);
-      this.geminiApiKey = null;
-    }
-  }
-
-  private async waitForInitialization(mainWindow: BrowserWindow): Promise<void> {
-    let attempts = 0
-    const maxAttempts = 30 // Reduced from 50 to 30 (3 seconds)
-
-    while (attempts < maxAttempts) {
-      const isInitialized = await mainWindow.webContents.executeJavaScript(
-        "window.__IS_INITIALIZED__"
-      )
-      if (isInitialized) return
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      attempts++
-    }
-    throw new Error("App failed to initialize after 3 seconds")
-  }
-
-  private async getCredits(): Promise<number> {
-    if (this.creditsCache !== null) return this.creditsCache
-
-    const mainWindow = this.deps.getMainWindow()
-    if (!mainWindow) return 999
-
-    try {
-      await this.waitForInitialization(mainWindow)
-      this.creditsCache = 999
-      return 999
-    } catch (error) {
-      console.error("Error getting credits:", error)
-      return 999
+      console.error("Failed to initialize Gemini client:", error)
+      this.geminiApiKey = null
     }
   }
 
   private async getLanguage(): Promise<string> {
-    if (this.languageCache) return this.languageCache
+    const now = Date.now()
+    if (this.cache.language && this.cache.lastConfig && (now - this.cache.lastConfig) < 60000) {
+      return this.cache.language
+    }
 
     try {
-      const config = configHelper.loadConfig();
-      if (config.language) {
-        this.languageCache = config.language
-        return config.language;
-      }
+      const config = configHelper.loadConfig()
+      const language = config.language || "python"
 
-      const mainWindow = this.deps.getMainWindow()
-      if (mainWindow) {
-        try {
-          await this.waitForInitialization(mainWindow)
-          const language = await mainWindow.webContents.executeJavaScript(
-            "window.__LANGUAGE__"
-          )
-
-          if (typeof language === "string" && language !== undefined && language !== null) {
-            this.languageCache = language
-            return language;
-          }
-        } catch (err) {
-          console.warn("Could not get language from window", err);
-        }
-      }
-
-      this.languageCache = "python"
-      return "python";
+      this.cache.language = language
+      this.cache.lastConfig = now
+      return language
     } catch (error) {
       console.error("Error getting language:", error)
-      this.languageCache = "python"
       return "python"
     }
   }
 
   // Smart model selection based on problem type
-  private getOptimalModel(problemType?: string): string {
-    return "gemini-2.5-flash";
+  private selectModel(problemType?: string, complexity?: 'simple' | 'complex'): string {
+    if (complexity === 'simple' || problemType === 'MCQ') {
+      return "gemini-2.0-flash-exp" // Fastest for simple tasks
+    }
+    return "gemini-2.0-flash-exp" // Consistent model choice
+  }
+
+  // Optimized prompt selection
+  private selectPrompt(problemInfo: any, isDebug: boolean = false): string {
+    if (isDebug) {
+      return PROMPT_TEMPLATES.DEBUG(problemInfo.problem_statement)
+    }
+
+    const { problem_statement, constraints, options, problem_type } = problemInfo
+    const language = this.cache.language || 'python'
+
+    // Smart prompt selection based on problem characteristics
+    if (problem_type === "MCQ") {
+      if (problem_statement.toLowerCase().includes('probability') ||
+          problem_statement.toLowerCase().includes('statistics')) {
+        return PROMPT_TEMPLATES.QUANT(problem_statement, options?.join('\n') || '')
+      }
+      if (problem_statement.toLowerCase().includes('logic') ||
+          problem_statement.toLowerCase().includes('reasoning')) {
+        return PROMPT_TEMPLATES.LOGICAL(problem_statement, options?.join('\n') || '')
+      }
+      return PROMPT_TEMPLATES.MCQ(problem_statement, options?.join('\n') || '')
+    }
+
+    // For coding problems
+    if (problem_statement.toLowerCase().includes('algorithm') ||
+        problem_statement.toLowerCase().includes('complexity') ||
+        problem_statement.toLowerCase().includes('data structure')) {
+      return PROMPT_TEMPLATES.CS_THEORY(problem_statement, constraints || '', language)
+    }
+
+    return PROMPT_TEMPLATES.CODING(problem_statement, constraints || '', language)
   }
 
   private async makeGeminiRequest(
@@ -161,545 +245,296 @@ export class ProcessingHelper {
     signal: AbortSignal
   ): Promise<string> {
     if (!this.geminiApiKey) {
-      throw new Error("Gemini API key not configured");
+      throw new Error("API key not configured")
     }
 
-    try {
-      const response = await this.axiosInstance.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.geminiApiKey}`,
-        {
-          contents: messages,
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 8192,
-            topP: 0.8,
-            topK: 40
-          }
+    const response = await this.axiosInstance.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.geminiApiKey}`,
+      {
+        contents: messages,
+        generationConfig: {
+          temperature: 0.1, // Lower for more consistent results
+          maxOutputTokens: 4096, // Reduced for faster responses
+          topP: 0.9,
+          topK: 20 // Reduced for better quality
         },
-        { signal }
-      );
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+        ]
+      },
+      { signal }
+    )
 
-      const responseData = response.data as GeminiResponse;
+    const responseData = response.data as GeminiResponse
 
-      if (!responseData.candidates || responseData.candidates.length === 0) {
-        throw new Error("Empty response from Gemini API");
-      }
-
-      const candidate = responseData.candidates[0];
-
-      // Check if response was truncated due to token limit
-      if (candidate.finishReason === 'MAX_TOKENS') {
-        console.warn("Response was truncated due to token limit, retrying with shorter prompt");
-        throw new Error("TRUNCATED_RESPONSE");
-      }
-
-      return candidate.content.parts[0].text;
-    } catch (error: any) {
-      if (axios.isCancel(error)) {
-        throw error;
-      }
-
-      console.error("Gemini API error:", error);
-
-      if (error.response?.status === 429) {
-        throw new Error("Gemini API rate limit exceeded. Please wait and try again.");
-      } else if (error.response?.status === 400) {
-        throw new Error("Invalid request to Gemini API. Please check your screenshots.");
-      } else if (error.response?.status === 403) {
-        throw new Error("Invalid Gemini API key or insufficient permissions.");
-      }
-
-      throw new Error("Failed to process with Gemini API. Please try again.");
+    if (!responseData.candidates?.[0]?.content?.parts?.[0]?.text) {
+      throw new Error("Invalid API response")
     }
+
+    return responseData.candidates[0].content.parts[0].text
   }
 
-  // Optimized screenshot loading with parallel processing
-  private async loadScreenshots(paths: string[]): Promise<Array<{ path: string; preview?: any; data: string }>> {
+  // Optimized screenshot loading
+  private async loadScreenshots(paths: string[]): Promise<Array<{ path: string; data: string }>> {
     const validPaths = paths.filter(fs.existsSync)
+    if (validPaths.length === 0) throw new Error("No valid screenshots")
 
-    if (validPaths.length === 0) {
-      throw new Error("No valid screenshot files found")
-    }
-
-    // Process screenshots in parallel for faster loading
-    const screenshots = await Promise.all(
+    // Process in parallel with error handling
+    const results = await Promise.allSettled(
       validPaths.map(async (path) => {
-        try {
-          const data = fs.readFileSync(path).toString('base64')
-          return { path, data }
-        } catch (err) {
-          console.error(`Error reading screenshot ${path}:`, err);
-          return null;
-        }
+        const data = fs.readFileSync(path).toString('base64')
+        return { path, data }
       })
     )
 
-    return screenshots.filter(Boolean) as Array<{ path: string; data: string }>
+    const screenshots = results
+      .filter((result): result is PromisedFulfilled<{ path: string; data: string }> =>
+        result.status === 'fulfilled')
+      .map(result => result.value)
+
+    if (screenshots.length === 0) throw new Error("Failed to load screenshots")
+    return screenshots
   }
 
   public async processScreenshots(): Promise<void> {
     const mainWindow = this.deps.getMainWindow()
-    if (!mainWindow) return
-
-    if (!this.geminiApiKey) {
-      this.initializeGeminiClient();
-
-      if (!this.geminiApiKey) {
-        console.error("Gemini API key not initialized");
-        mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.API_KEY_INVALID);
-        return;
-      }
+    if (!mainWindow || !this.geminiApiKey) {
+      mainWindow?.webContents.send(this.deps.PROCESSING_EVENTS.API_KEY_INVALID)
+      return
     }
 
     const view = this.deps.getView()
-    console.log("Processing screenshots in view:", view)
+
+    // Abort any existing requests
+    if (this.abortController) {
+      this.abortController.abort()
+    }
+    this.abortController = new AbortController()
+    const { signal } = this.abortController
+
+    try {
+      if (view === "queue") {
+        await this.processInitialScreenshots(signal, mainWindow)
+      } else {
+        await this.processExtraScreenshots(signal, mainWindow)
+      }
+    } catch (error: any) {
+      this.handleProcessingError(error, mainWindow, view)
+    } finally {
+      this.abortController = null
+    }
+  }
+
+  private async processInitialScreenshots(signal: AbortSignal, mainWindow: BrowserWindow): Promise<void> {
+    const screenshotQueue = this.screenshotHelper.getScreenshotQueue()
+    if (!screenshotQueue?.length) {
+      mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS)
+      return
+    }
+
+    mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.INITIAL_START)
+
+    // Step 1: Extract problem info
+    mainWindow.webContents.send("processing-status", {
+      message: "Analyzing screenshots...",
+      progress: 25
+    })
+
+    const screenshots = await this.loadScreenshots(screenshotQueue)
+    const language = await this.getLanguage()
+
+    const extractionMessages: GeminiMessage[] = [
+      {
+        role: "user",
+        parts: [
+          { text: PROMPT_TEMPLATES.EXTRACTION(language) },
+          ...screenshots.map(({ data }) => ({
+            inlineData: { mimeType: "image/png", data }
+          }))
+        ]
+      }
+    ]
+
+    const extractionResponse = await this.makeGeminiRequest(
+      extractionMessages,
+      this.selectModel('extraction', 'simple'),
+      signal
+    )
+
+    const problemInfo = this.parseJsonResponse(extractionResponse)
+    this.deps.setProblemInfo(problemInfo)
+
+    mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.PROBLEM_EXTRACTED, problemInfo)
+
+    // Step 2: Generate solution
+    mainWindow.webContents.send("processing-status", {
+      message: "Generating solution...",
+      progress: 75
+    })
+
+    const solutionPrompt = this.selectPrompt(problemInfo)
+    const solutionMessages: GeminiMessage[] = [
+      { role: "user", parts: [{ text: solutionPrompt }] }
+    ]
+
+    const solutionResponse = await this.makeGeminiRequest(
+      solutionMessages,
+      this.selectModel(problemInfo.problem_type, 'complex'),
+      signal
+    )
+
+    const solutionData = this.parseSolutionResponse(solutionResponse, problemInfo.problem_type)
+
+    mainWindow.webContents.send("processing-status", {
+      message: "Complete",
+      progress: 100
+    })
+
+    mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS, solutionData)
+    this.deps.setView("solutions")
+  }
+
+  private async processExtraScreenshots(signal: AbortSignal, mainWindow: BrowserWindow): Promise<void> {
+    const extraQueue = this.screenshotHelper.getExtraScreenshotQueue()
+    if (!extraQueue?.length) {
+      mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS)
+      return
+    }
+
+    mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.DEBUG_START)
+
+    const allPaths = [
+      ...this.screenshotHelper.getScreenshotQueue(),
+      ...extraQueue
+    ]
+
+    const screenshots = await this.loadScreenshots(allPaths)
+    const problemInfo = this.deps.getProblemInfo()
+
+    if (!problemInfo) throw new Error("No problem info available")
+
+    const debugPrompt = this.selectPrompt(problemInfo, true)
+    const debugMessages: GeminiMessage[] = [
+      {
+        role: "user",
+        parts: [
+          { text: debugPrompt },
+          ...screenshots.map(({ data }) => ({
+            inlineData: { mimeType: "image/png", data }
+          }))
+        ]
+      }
+    ]
+
+    const debugResponse = await this.makeGeminiRequest(
+      debugMessages,
+      this.selectModel('debug', 'complex'),
+      signal
+    )
+
+    const debugData = this.parseDebugResponse(debugResponse)
+
+    this.deps.setHasDebugged(true)
+    mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.DEBUG_SUCCESS, debugData)
+  }
+
+  private parseJsonResponse(response: string): any {
+    try {
+      const jsonText = response.replace(/```json|```/g, '').trim()
+      return JSON.parse(jsonText)
+    } catch (error) {
+      throw new Error("Failed to parse problem information")
+    }
+  }
+
+  private parseSolutionResponse(response: string, problemType: string): any {
+    const codeMatch = response.match(/```(?:\w+)?\s*([\s\S]*?)```/)
+    const code = codeMatch ? codeMatch[1].trim() : response.trim()
+
+    // Extract insights more efficiently
+    const thoughts = this.extractThoughts(response, problemType)
+
+    return {
+      code,
+      thoughts,
+      time_complexity: this.extractComplexity(response, 'time'),
+      space_complexity: this.extractComplexity(response, 'space')
+    }
+  }
+
+  private parseDebugResponse(response: string): any {
+    const codeMatch = response.match(/```(?:\w+)?\s*([\s\S]*?)```/)
+    const code = codeMatch ? codeMatch[1].trim() : "// See analysis below"
+
+    return {
+      code,
+      debug_analysis: response,
+      thoughts: this.extractThoughts(response, 'debug')
+    }
+  }
+
+  private extractThoughts(response: string, type: string): string[] {
+    const bulletRegex = /(?:^|\n)\s*[•\-\*]\s*([^\n]+)/g
+    const matches = [...response.matchAll(bulletRegex)]
+
+    if (matches.length > 0) {
+      return matches
+        .map(m => m[1].trim())
+        .filter(t => t.length > 10)
+        .slice(0, 4)
+    }
+
+    // Fallback thoughts based on type
+    const fallbacks = {
+      'MCQ': ['Applied systematic analysis', 'Verified with given constraints'],
+      'coding': ['Chose optimal algorithm', 'Handled edge cases efficiently'],
+      'debug': ['Analyzed error patterns', 'Provided specific fixes']
+    }
+
+    return fallbacks[type] || fallbacks['coding']
+  }
+
+  private extractComplexity(response: string, type: 'time' | 'space'): string {
+    const complexityRegex = new RegExp(`${type}[:\\s]*O\\([^)]+\\)`, 'i')
+    const match = response.match(complexityRegex)
+    return match ? match[0].replace(/.*O/, 'O') : 'O(n)'
+  }
+
+  private handleProcessingError(error: any, mainWindow: BrowserWindow, view: string): void {
+    if (axios.isCancel(error)) return
+
+    console.error("Processing error:", error)
+
+    const event = view === "queue"
+      ? this.deps.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR
+      : this.deps.PROCESSING_EVENTS.DEBUG_ERROR
+
+    const message = error.response?.status === 429
+      ? "Rate limit exceeded. Please wait and try again."
+      : error.message || "Processing failed. Please try again."
+
+    mainWindow.webContents.send(event, message)
 
     if (view === "queue") {
-      mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.INITIAL_START)
-      const screenshotQueue = this.screenshotHelper.getScreenshotQueue()
-      console.log("Processing main queue screenshots:", screenshotQueue)
-
-      if (!screenshotQueue || screenshotQueue.length === 0) {
-        console.log("No screenshots found in queue");
-        mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS);
-        return;
-      }
-
-      try {
-        this.currentProcessingAbortController = new AbortController()
-        const { signal } = this.currentProcessingAbortController
-
-        const validScreenshots = await this.loadScreenshots(screenshotQueue)
-
-        const result = await this.processScreenshotsHelper(validScreenshots, signal)
-
-        if (!result.success) {
-          console.log("Processing failed:", result.error)
-          if (result.error?.includes("API Key") || result.error?.includes("Gemini")) {
-            mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.API_KEY_INVALID)
-          } else {
-            mainWindow.webContents.send(
-              this.deps.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
-              result.error
-            )
-          }
-          console.log("Resetting view to queue due to error")
-          this.deps.setView("queue")
-          return
-        }
-
-        console.log("Setting view to solutions after successful processing")
-        mainWindow.webContents.send(
-          this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
-          result.data
-        )
-        this.deps.setView("solutions")
-      } catch (error: any) {
-        mainWindow.webContents.send(
-          this.deps.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
-          error
-        )
-        console.error("Processing error:", error)
-        if (axios.isCancel(error)) {
-          mainWindow.webContents.send(
-            this.deps.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
-            "Processing was canceled by the user."
-          )
-        } else {
-          mainWindow.webContents.send(
-            this.deps.PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
-            error.message || "Server error. Please try again."
-          )
-        }
-        console.log("Resetting view to queue due to error")
-        this.deps.setView("queue")
-      } finally {
-        this.currentProcessingAbortController = null
-      }
-    } else {
-      // view == 'solutions'
-      const extraScreenshotQueue = this.screenshotHelper.getExtraScreenshotQueue()
-      console.log("Processing extra queue screenshots:", extraScreenshotQueue)
-
-      if (!extraScreenshotQueue || extraScreenshotQueue.length === 0) {
-        console.log("No extra screenshots found in queue");
-        mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS);
-        return;
-      }
-
-      mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.DEBUG_START)
-
-      this.currentExtraProcessingAbortController = new AbortController()
-      const { signal } = this.currentExtraProcessingAbortController
-
-      try {
-        const allPaths = [
-          ...this.screenshotHelper.getScreenshotQueue(),
-          ...extraScreenshotQueue
-        ];
-
-        const validScreenshots = await this.loadScreenshots(allPaths)
-
-        console.log("Combined screenshots for processing:", validScreenshots.map((s) => s.path))
-
-        const result = await this.processExtraScreenshotsHelper(validScreenshots, signal)
-
-        if (result.success) {
-          this.deps.setHasDebugged(true)
-          mainWindow.webContents.send(
-            this.deps.PROCESSING_EVENTS.DEBUG_SUCCESS,
-            result.data
-          )
-        } else {
-          mainWindow.webContents.send(
-            this.deps.PROCESSING_EVENTS.DEBUG_ERROR,
-            result.error
-          )
-        }
-      } catch (error: any) {
-        if (axios.isCancel(error)) {
-          mainWindow.webContents.send(
-            this.deps.PROCESSING_EVENTS.DEBUG_ERROR,
-            "Extra processing was canceled by the user."
-          )
-        } else {
-          mainWindow.webContents.send(
-            this.deps.PROCESSING_EVENTS.DEBUG_ERROR,
-            error.message
-          )
-        }
-      } finally {
-        this.currentExtraProcessingAbortController = null
-      }
-    }
-  }
-
-  private async processScreenshotsHelper(
-    screenshots: Array<{ path: string; data: string }>,
-    signal: AbortSignal
-  ) {
-    try {
-      const [language] = await Promise.all([
-        this.getLanguage()
-      ])
-
-      const mainWindow = this.deps.getMainWindow();
-      const imageDataList = screenshots.map(screenshot => screenshot.data);
-
-      if (mainWindow) {
-        mainWindow.webContents.send("processing-status", {
-          message: "Analyzing problem from screenshots...",
-          progress: 20
-        });
-      }
-
-      // Step 1: Extract problem info - OPTIMIZED PROMPT
-      const extractionModel = this.getOptimalModel();
-      const geminiMessages: GeminiMessage[] = [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `Extract problem info from screenshots. Return JSON with: problem_statement, constraints, function_signature, example_input, example_output, problem_type ("coding"/"MCQ"), options (if MCQ). Language: ${language}.`
-            },
-            ...imageDataList.map(data => ({
-              inlineData: {
-                mimeType: "image/png",
-                data: data
-              }
-            }))
-          ]
-        }
-      ];
-
-      const extractionResponse = await this.makeGeminiRequest(geminiMessages, extractionModel, signal);
-
-      let problemInfo;
-      try {
-        const jsonText = extractionResponse.replace(/```json|```/g, '').trim();
-        problemInfo = JSON.parse(jsonText);
-      } catch (error) {
-        console.error("Error parsing Gemini response:", error);
-        return {
-          success: false,
-          error: "Failed to parse problem information. Please try again or use clearer screenshots."
-        };
-      }
-
-      if (mainWindow) {
-        mainWindow.webContents.send("processing-status", {
-          message: "Problem analyzed. Generating solution...",
-          progress: 50
-        });
-      }
-
-      // Store problem info in AppState
-      this.deps.setProblemInfo(problemInfo);
-
-      if (mainWindow) {
-        mainWindow.webContents.send(
-          this.deps.PROCESSING_EVENTS.PROBLEM_EXTRACTED,
-          problemInfo
-        );
-
-        // Generate solutions
-        const solutionsResult = await this.generateSolutionsHelper(signal, problemInfo.problem_type);
-        if (solutionsResult.success) {
-          this.screenshotHelper.clearExtraScreenshotQueue();
-
-          mainWindow.webContents.send("processing-status", {
-            message: "Solution generated successfully",
-            progress: 100
-          });
-
-          mainWindow.webContents.send(
-            this.deps.PROCESSING_EVENTS.SOLUTION_SUCCESS,
-            solutionsResult.data
-          );
-          return { success: true, data: solutionsResult.data };
-        } else {
-          throw new Error(solutionsResult.error || "Failed to generate solutions");
-        }
-      }
-
-      return { success: false, error: "Failed to process screenshots" };
-    } catch (error: any) {
-      if (axios.isCancel(error)) {
-        return {
-          success: false,
-          error: "Processing was canceled by the user."
-        };
-      }
-
-      console.error("API Error Details:", error);
-      return {
-        success: false,
-        error: error.message || "Failed to process screenshots. Please try again."
-      };
-    }
-  }
-
-  private async generateSolutionsHelper(signal: AbortSignal, problemType?: string) {
-    try {
-      const problemInfo = this.deps.getProblemInfo();
-      const language = await this.getLanguage();
-      const mainWindow = this.deps.getMainWindow();
-
-      if (!problemInfo) {
-        throw new Error("No problem info available");
-      }
-
-      if (mainWindow) {
-        mainWindow.webContents.send("processing-status", {
-          message: "Generating solution...",
-          progress: 70
-        });
-      }
-
-      const solutionModel = this.getOptimalModel(problemType);
-
-      // OPTIMIZED PROMPTS - Much more concise
-      let promptText: string;
-
-      if (problemInfo.problem_type === "MCQ") {
-        promptText = `Solve: ${problemInfo.problem_statement}
-Options: ${problemInfo.options || ""}
-
-METHOD:
-1. Identify problem type & extract values
-2. Apply correct formula step-by-step
-3. Verify result matches option
-4. Final answer: **ANSWER: [LETTER]**
-
-Show work clearly. Accuracy critical.`;
-
-      } else {
-        promptText = `Code solution in ${language}:
-
-PROBLEM: ${problemInfo.problem_statement}
-CONSTRAINTS: ${problemInfo.constraints || "Standard constraints"}
-
-APPROACH:
-1. Choose optimal algorithm/data structure
-2. Handle edge cases & constraints
-3. Implement efficient solution
-4. Verify correctness
-
-Return:
-\`\`\`${language}
-[Complete working code]
-\`\`\`
-
-KEY INSIGHTS: [3-4 bullet points explaining approach]`;
-      }
-
-      const geminiMessages = [
-        {
-          role: "user",
-          parts: [{ text: promptText }]
-        }
-      ];
-
-      const responseContent = await this.makeGeminiRequest(geminiMessages, solutionModel, signal);
-
-      // Process the response
-      const codeMatch = responseContent.match(/```(?:\w+)?\s*([\s\S]*?)```/);
-      const code = codeMatch ? codeMatch[1].trim() : responseContent;
-
-      // Extract insights/thoughts
-      const insightsRegex = /(?:insights?|key points?|approach)[:\s]*\n?([\s\S]*?)(?:$|(?=\n\s*(?:answer|final|solution|code|```|\*\*)))/i;
-      const insightsMatch = responseContent.match(insightsRegex);
-      let thoughts: string[] = [];
-
-      if (insightsMatch && insightsMatch[1]) {
-        const bulletPoints = insightsMatch[1].match(/(?:^|\n)\s*[•\-\*]\s*([^\n]+)/g);
-        if (bulletPoints) {
-          thoughts = bulletPoints.map(point =>
-            point.replace(/^\s*[•\-\*]\s*/, '').trim()
-          ).filter(line => line.length > 10).slice(0, 4);
-        } else {
-          thoughts = insightsMatch[1].split('\n')
-            .map(line => line.trim())
-            .filter(line => line.length > 10 && !line.includes('```'))
-            .slice(0, 4);
-        }
-      }
-
-      // Fallback thoughts
-      if (thoughts.length === 0) {
-        thoughts = problemInfo.problem_type === "MCQ"
-          ? ["Systematic analysis with step verification"]
-          : ["Optimal algorithm with edge case handling"];
-      }
-
-      return {
-        success: true,
-        data: { code, thoughts }
-      };
-
-    } catch (error: any) {
-      if (axios.isCancel(error)) {
-        return {
-          success: false,
-          error: "Processing was canceled by the user."
-        };
-      }
-
-      console.error("Solution generation error:", error);
-      return { success: false, error: error.message || "Failed to generate solution" };
-    }
-  }
-
-  private async processExtraScreenshotsHelper(
-    screenshots: Array<{ path: string; data: string }>,
-    signal: AbortSignal
-  ) {
-    try {
-      const problemInfo = this.deps.getProblemInfo();
-      const language = await this.getLanguage();
-      const mainWindow = this.deps.getMainWindow();
-
-      if (!problemInfo) {
-        throw new Error("No problem info available");
-      }
-
-      if (mainWindow) {
-        mainWindow.webContents.send("processing-status", {
-          message: "Analyzing debug screenshots...",
-          progress: 50
-        });
-      }
-
-      const imageDataList = screenshots.map(screenshot => screenshot.data);
-
-      // OPTIMIZED DEBUG PROMPT - Much more concise
-      const debugPrompt = `Debug help for: "${problemInfo.problem_statement}"
-
-Analyze screenshots and provide:
-### Issues Found
-- [List specific problems]
-
-### Fixes Needed
-- [Exact code changes required]
-
-### Key Points
-- [Important takeaways]
-
-Be specific. Use code blocks for examples.`;
-
-      const geminiMessages = [
-        {
-          role: "user",
-          parts: [
-            { text: debugPrompt },
-            ...imageDataList.map(data => ({
-              inlineData: {
-                mimeType: "image/png",
-                data: data
-              }
-            }))
-          ]
-        }
-      ];
-
-      const debugContent = await this.makeGeminiRequest(geminiMessages, "gemini-2.5-flash", signal);
-
-      if (mainWindow) {
-        mainWindow.webContents.send("processing-status", {
-          message: "Debug analysis complete",
-          progress: 100
-        });
-      }
-
-      let extractedCode = "// Debug analysis - see details below";
-      const codeMatch = debugContent.match(/```(?:[a-zA-Z]+)?([\s\S]*?)```/);
-      if (codeMatch && codeMatch[1]) {
-        extractedCode = codeMatch[1].trim();
-      }
-
-      const bulletPoints = debugContent.match(/(?:^|\n)[ ]*(?:[-*•]|\d+\.)[ ]+([^\n]+)/g);
-      const thoughts = bulletPoints
-        ? bulletPoints.map(point => point.replace(/^[ ]*(?:[-*•]|\d+\.)[ ]+/, '').trim()).slice(0, 4)
-        : ["Debug analysis based on screenshots"];
-
-      return {
-        success: true,
-        data: {
-          code: extractedCode,
-          debug_analysis: debugContent,
-          thoughts: thoughts
-        }
-      };
-    } catch (error: any) {
-      console.error("Debug processing error:", error);
-      return { success: false, error: error.message || "Failed to process debug request" };
+      this.deps.setView("queue")
     }
   }
 
   public cancelOngoingRequests(): void {
-    let wasCancelled = false
-
-    if (this.currentProcessingAbortController) {
-      this.currentProcessingAbortController.abort()
-      this.currentProcessingAbortController = null
-      wasCancelled = true
-    }
-
-    if (this.currentExtraProcessingAbortController) {
-      this.currentExtraProcessingAbortController.abort()
-      this.currentExtraProcessingAbortController = null
-      wasCancelled = true
+    if (this.abortController) {
+      this.abortController.abort()
+      this.abortController = null
     }
 
     this.deps.setHasDebugged(false)
     this.deps.setProblemInfo(null)
-
-    // Clear caches on cancel
-    this.languageCache = null
-    this.creditsCache = null
+    this.cache = {} // Clear cache
 
     const mainWindow = this.deps.getMainWindow()
-    if (wasCancelled && mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS)
     }
   }
