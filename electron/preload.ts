@@ -170,13 +170,13 @@ const electronAPI = {
       ipcRenderer.removeListener("subscription-portal-closed", subscription)
     }
   },
-  onReset: (callback: () => void) => {
-    const subscription = () => callback()
-    ipcRenderer.on(PROCESSING_EVENTS.RESET, subscription)
-    return () => {
-      ipcRenderer.removeListener(PROCESSING_EVENTS.RESET, subscription)
-    }
-  },
+  // // onReset: (callback: () => void) => {
+  // //   const subscription = () => callback()
+  // //   ipcRenderer.on(PROCESSING_EVENTS.RESET, subscription)
+  // //   return () => {
+  // //     ipcRenderer.removeListener(PROCESSING_EVENTS.RESET, subscription)
+  // //   }
+  // },
   startUpdate: () => ipcRenderer.invoke("start-update"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
   onUpdateAvailable: (callback: (info: any) => void) => {
@@ -202,10 +202,10 @@ const electronAPI = {
     }
   },
   getPlatform: () => process.platform,
-  
+
   // New methods for OpenAI API integration
   getConfig: () => ipcRenderer.invoke("get-config"),
-  updateConfig: (config: { apiKey?: string; model?: string; language?: string; opacity?: number }) => 
+  updateConfig: (config: { apiKey?: string; model?: string; language?: string; opacity?: number }) =>
     ipcRenderer.invoke("update-config", config),
   onShowSettings: (callback: () => void) => {
     const subscription = () => callback()
@@ -215,9 +215,9 @@ const electronAPI = {
     }
   },
   checkApiKey: () => ipcRenderer.invoke("check-api-key"),
-  validateApiKey: (apiKey: string) => 
+  validateApiKey: (apiKey: string) =>
     ipcRenderer.invoke("validate-api-key", apiKey),
-  openExternal: (url: string) => 
+  openExternal: (url: string) =>
     ipcRenderer.invoke("openExternal", url),
   onApiKeyInvalid: (callback: () => void) => {
     const subscription = () => callback()

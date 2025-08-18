@@ -191,6 +191,24 @@ if (!gotTheLock) {
 
 // Auth callback removed as we no longer use Supabase authentication
 
+function handleScreenshotInSolutionsView(): void {
+  // When taking screenshot in solutions view, automatically switch to queue
+  if (state.view === "solutions") {
+    console.log("Screenshot taken in solutions view - switching to queue for new question");
+    setView("queue");
+
+    // Clear problem info for fresh start
+    state.problemInfo = null;
+    state.hasDebugged = false;
+
+    // Notify frontend of view change
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("reset-view");
+    }
+  }
+}
+
 // Window management functions
 async function createWindow(): Promise<void> {
   if (state.mainWindow) {
@@ -278,7 +296,7 @@ async function createWindow(): Promise<void> {
     // In production, load from the built files
     const indexPath = path.join(__dirname, "../dist/index.html")
     console.log("Loading production build:", indexPath)
-    
+
     if (fs.existsSync(indexPath)) {
       state.mainWindow.loadFile(indexPath)
     } else {
@@ -346,15 +364,15 @@ async function createWindow(): Promise<void> {
   state.currentX = bounds.x
   state.currentY = bounds.y
   state.isWindowVisible = true
-  
+
   // Set opacity based on user preferences or hide initially
   // Ensure the window is visible for the first launch or if opacity > 0.1
   const savedOpacity = configHelper.getOpacity();
   console.log(`Initial opacity from config: ${savedOpacity}`);
-  
+
   // Always make sure window is shown first
   state.mainWindow.showInactive(); // Use showInactive for consistency
-  
+
   if (savedOpacity <= 0.1) {
     console.log('Initial opacity too low, setting to 0 and hiding window');
     state.mainWindow.setOpacity(0);
@@ -510,26 +528,26 @@ async function initializeApp() {
     const sessionPath = path.join(appDataPath, 'session')
     const tempPath = path.join(appDataPath, 'temp')
     const cachePath = path.join(appDataPath, 'cache')
-    
+
     // Create directories if they don't exist
     for (const dir of [appDataPath, sessionPath, tempPath, cachePath]) {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true })
       }
     }
-    
+
     app.setPath('userData', appDataPath)
-    app.setPath('sessionData', sessionPath)      
+    app.setPath('sessionData', sessionPath)
     app.setPath('temp', tempPath)
     app.setPath('cache', cachePath)
-      
+
     loadEnvVariables()
-    
+
     // Ensure a configuration file exists
     if (!configHelper.hasApiKey()) {
       console.log("No API key found in configuration. User will need to set up.")
     }
-    
+
     initializeHelpers()
     initializeIpcHandlers({
       getMainWindow,
@@ -584,7 +602,7 @@ app.on("open-url", (event, url) => {
 // Handle second instance (removed auth callback handling)
 app.on("second-instance", (event, commandLine) => {
   console.log("second-instance event received:", commandLine)
-  
+
   // Focus or create the main window
   if (!state.mainWindow) {
     createWindow()
@@ -621,9 +639,18 @@ function getView(): "queue" | "solutions" | "debug" {
   return state.view
 }
 
+
 function setView(view: "queue" | "solutions" | "debug"): void {
-  state.view = view
-  state.screenshotHelper?.setView(view)
+  console.log(`Changing view from ${state.view} to ${view}`);
+
+  // CHANGE: When switching to solutions, we're done with current problem
+  // Next screenshot will be treated as new question
+  if (view === "solutions" && state.view === "queue") {
+    console.log("Switching to solutions view - next screenshot will be new question");
+  }
+
+  state.view = view;
+  state.screenshotHelper?.setView(view);
 }
 
 function getScreenshotHelper(): ScreenshotHelper | null {
@@ -654,13 +681,34 @@ function clearQueues(): void {
 
 async function takeScreenshot(): Promise<string> {
   if (!state.mainWindow) throw new Error("No main window available")
-  return (
-    state.screenshotHelper?.takeScreenshot(
-      () => hideMainWindow(),
-      () => showMainWindow()
-    ) || ""
-  )
+
+  const screenshotPath = await state.screenshotHelper?.takeScreenshot(
+    () => hideMainWindow(),
+    () => showMainWindow()
+  ) || ""
+
+  // CHANGE: Handle automatic view transition when taking screenshot in solutions view
+  if (state.view === "solutions") {
+    console.log("Screenshot taken in solutions view - switching to queue for new question");
+    setView("queue");
+
+    // Clear problem info for fresh start
+    state.problemInfo = null;
+    state.hasDebugged = false;
+
+    // Notify frontend of view change
+    if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+      state.mainWindow.webContents.send("reset-view");
+      state.mainWindow.webContents.send("screenshot-taken", {
+        path: screenshotPath,
+        preview: await getImagePreview(screenshotPath)
+      });
+    }
+  }
+
+  return screenshotPath;
 }
+
 
 async function getImagePreview(filepath: string): Promise<string> {
   return state.screenshotHelper?.getImagePreview(filepath) || ""

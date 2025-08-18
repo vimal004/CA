@@ -56,29 +56,29 @@ export class ShortcutsHelper {
       await this.deps.processingHelper?.processScreenshots()
     })
 
-    globalShortcut.register("CommandOrControl+R", () => {
-      console.log(
-        "Command + R pressed. Canceling requests and resetting queues..."
-      )
+    // globalShortcut.register("CommandOrControl+R", () => {
+    //   console.log(
+    //     "Command + R pressed. Canceling requests and resetting queues..."
+    //   )
 
-      // Cancel ongoing API requests
-      this.deps.processingHelper?.cancelOngoingRequests()
+    //   // Cancel ongoing API requests
+    //   this.deps.processingHelper?.cancelOngoingRequests()
 
-      // Clear both screenshot queues
-      this.deps.clearQueues()
+    //   // Clear both screenshot queues
+    //   this.deps.clearQueues()
 
-      console.log("Cleared queues.")
+    //   console.log("Cleared queues.")
 
-      // Update the view state to 'queue'
-      this.deps.setView("queue")
+    //   // Update the view state to 'queue'
+    //   this.deps.setView("queue")
 
-      // Notify renderer process to switch view to 'queue'
-      const mainWindow = this.deps.getMainWindow()
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send("reset-view")
-        mainWindow.webContents.send("reset")
-      }
-    })
+    //   // Notify renderer process to switch view to 'queue'
+    //   const mainWindow = this.deps.getMainWindow()
+    //   if (mainWindow && !mainWindow.isDestroyed()) {
+    //     mainWindow.webContents.send("reset-view")
+    //     mainWindow.webContents.send("reset")
+    //   }
+    // })
 
     // New shortcuts for moving the window
     globalShortcut.register("CommandOrControl+Left", () => {

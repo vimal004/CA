@@ -252,31 +252,31 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
   })
 
   // Reset handlers
-  ipcMain.handle("trigger-reset", () => {
-    try {
-      // First cancel any ongoing requests
-      deps.processingHelper?.cancelOngoingRequests()
+  // ipcMain.handle("trigger-reset", () => {
+  //   try {
+  //     // First cancel any ongoing requests
+  //     deps.processingHelper?.cancelOngoingRequests()
 
-      // Clear all queues immediately
-      deps.clearQueues()
+  //     // Clear all queues immediately
+  //     deps.clearQueues()
 
-      // Reset view to queue
-      deps.setView("queue")
+  //     // Reset view to queue
+  //     deps.setView("queue")
 
-      // Get main window and send reset events
-      const mainWindow = deps.getMainWindow()
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        // Send reset events in sequence
-        mainWindow.webContents.send("reset-view")
-        mainWindow.webContents.send("reset")
-      }
+  //     // Get main window and send reset events
+  //     const mainWindow = deps.getMainWindow()
+  //     if (mainWindow && !mainWindow.isDestroyed()) {
+  //       // Send reset events in sequence
+  //       mainWindow.webContents.send("reset-view")
+  //       mainWindow.webContents.send("reset")
+  //     }
 
-      return { success: true }
-    } catch (error) {
-      console.error("Error triggering reset:", error)
-      return { error: "Failed to trigger reset" }
-    }
-  })
+  //     return { success: true }
+  //   } catch (error) {
+  //     console.error("Error triggering reset:", error)
+  //     return { error: "Failed to trigger reset" }
+  //   }
+  // })
 
   // Window movement handlers
   ipcMain.handle("trigger-move-left", () => {

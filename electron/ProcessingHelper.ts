@@ -300,32 +300,28 @@ export class ProcessingHelper {
   }
 
   public async processScreenshots(): Promise<void> {
-    const mainWindow = this.deps.getMainWindow()
-    if (!mainWindow || !this.geminiApiKey) {
-      mainWindow?.webContents.send(this.deps.PROCESSING_EVENTS.API_KEY_INVALID)
-      return
-    }
+  const mainWindow = this.deps.getMainWindow()
+  if (!mainWindow || !this.geminiApiKey) {
+    mainWindow?.webContents.send(this.deps.PROCESSING_EVENTS.API_KEY_INVALID)
+    return
+  }
 
-    const view = this.deps.getView()
+  // Abort any existing requests
+  if (this.abortController) {
+    this.abortController.abort()
+  }
+  this.abortController = new AbortController()
+  const { signal } = this.abortController
 
-    // Abort any existing requests
-    if (this.abortController) {
-      this.abortController.abort()
-    }
-    this.abortController = new AbortController()
-    const { signal } = this.abortController
-
-    try {
-      if (view === "queue") {
-        await this.processInitialScreenshots(signal, mainWindow)
-      } else {
-        await this.processExtraScreenshots(signal, mainWindow)
-      }
-    } catch (error: any) {
-      this.handleProcessingError(error, mainWindow, view)
-    } finally {
-      this.abortController = null
-    }
+  try {
+    // CHANGE: Always process as initial screenshots (new question)
+    // Remove the debug/extra screenshot functionality
+    await this.processInitialScreenshots(signal, mainWindow)
+  } catch (error: any) {
+    this.handleProcessingError(error, mainWindow, 'queue') // Always treat as queue
+  } finally {
+    this.abortController = null
+  }
   }
 
   private async processInitialScreenshots(signal: AbortSignal, mainWindow: BrowserWindow): Promise<void> {
