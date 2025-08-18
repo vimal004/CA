@@ -189,22 +189,6 @@ const SolutionCommands: React.FC<SolutionCommandsProps> = ({
           </>
         )}
 
-        {/* Start Over */}
-        <div
-          className="flex items-center gap-2 cursor-pointer rounded px-2 py-1.5 hover:bg-gray-50 transition-colors"
-          onClick={handleReset}
-        >
-          <span className="text-[11px] leading-none font-medium">Start Over</span>
-          <div className="flex gap-1">
-            <kbd className="bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 text-[10px] leading-none text-gray-600 font-mono">
-              {COMMAND_KEY}
-            </kbd>
-            <kbd className="bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 text-[10px] leading-none text-gray-600 font-mono">
-              R
-            </kbd>
-          </div>
-        </div>
-
         {/* Separator */}
         <div className="mx-2 h-4 w-px bg-gray-200" />
 
