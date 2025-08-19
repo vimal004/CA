@@ -153,7 +153,7 @@ export class ProcessingHelper {
 
     // Optimized axios instance
     this.axiosInstance = axios.default.create({
-      timeout: 25000, // Reduced timeout
+      timeout: 25000000, // Reduced timeout
       maxContentLength: 10 * 1024 * 1024, // 10MB max
       maxBodyLength: 10 * 1024 * 1024,
       headers: {
@@ -202,9 +202,9 @@ export class ProcessingHelper {
   // Smart model selection based on problem type
   private selectModel(problemType?: string, complexity?: 'simple' | 'complex'): string {
     if (complexity === 'simple' || problemType === 'MCQ') {
-      return "gemini-2.5-flash" // Fastest for simple tasks
+      return "gemini-2.5-pro" // Fastest for simple tasks
     }
-    return "gemini-2.5-flash" // Consistent model choice
+    return "gemini-2.5-pro" // Consistent model choice
   }
 
   // Optimized prompt selection
@@ -219,11 +219,11 @@ export class ProcessingHelper {
     // Smart prompt selection based on problem characteristics
     if (problem_type === "MCQ") {
       if (problem_statement.toLowerCase().includes('probability') ||
-          problem_statement.toLowerCase().includes('statistics')) {
+        problem_statement.toLowerCase().includes('statistics')) {
         return PROMPT_TEMPLATES.QUANT(problem_statement, options?.join('\n') || '')
       }
       if (problem_statement.toLowerCase().includes('logic') ||
-          problem_statement.toLowerCase().includes('reasoning')) {
+        problem_statement.toLowerCase().includes('reasoning')) {
         return PROMPT_TEMPLATES.LOGICAL(problem_statement, options?.join('\n') || '')
       }
       return PROMPT_TEMPLATES.MCQ(problem_statement, options?.join('\n') || '')
@@ -231,8 +231,8 @@ export class ProcessingHelper {
 
     // For coding problems
     if (problem_statement.toLowerCase().includes('algorithm') ||
-        problem_statement.toLowerCase().includes('complexity') ||
-        problem_statement.toLowerCase().includes('data structure')) {
+      problem_statement.toLowerCase().includes('complexity') ||
+      problem_statement.toLowerCase().includes('data structure')) {
       return PROMPT_TEMPLATES.CS_THEORY(problem_statement, constraints || '', language)
     }
 
@@ -300,28 +300,28 @@ export class ProcessingHelper {
   }
 
   public async processScreenshots(): Promise<void> {
-  const mainWindow = this.deps.getMainWindow()
-  if (!mainWindow || !this.geminiApiKey) {
-    mainWindow?.webContents.send(this.deps.PROCESSING_EVENTS.API_KEY_INVALID)
-    return
-  }
+    const mainWindow = this.deps.getMainWindow()
+    if (!mainWindow || !this.geminiApiKey) {
+      mainWindow?.webContents.send(this.deps.PROCESSING_EVENTS.API_KEY_INVALID)
+      return
+    }
 
-  // Abort any existing requests
-  if (this.abortController) {
-    this.abortController.abort()
-  }
-  this.abortController = new AbortController()
-  const { signal } = this.abortController
+    // Abort any existing requests
+    if (this.abortController) {
+      this.abortController.abort()
+    }
+    this.abortController = new AbortController()
+    const { signal } = this.abortController
 
-  try {
-    // CHANGE: Always process as initial screenshots (new question)
-    // Remove the debug/extra screenshot functionality
-    await this.processInitialScreenshots(signal, mainWindow)
-  } catch (error: any) {
-    this.handleProcessingError(error, mainWindow, 'queue') // Always treat as queue
-  } finally {
-    this.abortController = null
-  }
+    try {
+      // CHANGE: Always process as initial screenshots (new question)
+      // Remove the debug/extra screenshot functionality
+      await this.processInitialScreenshots(signal, mainWindow)
+    } catch (error: any) {
+      this.handleProcessingError(error, mainWindow, 'queue') // Always treat as queue
+    } finally {
+      this.abortController = null
+    }
   }
 
   private async processInitialScreenshots(signal: AbortSignal, mainWindow: BrowserWindow): Promise<void> {
