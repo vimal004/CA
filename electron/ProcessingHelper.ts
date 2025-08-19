@@ -34,15 +34,20 @@ interface GeminiResponse {
 // --- Specialized Prompts Tuned for the Gemini 2.5 Family ---
 
 const PROMPT_TEMPLATES = {
-  EXTRACTION: (lang: string) => `Analyze the provided screenshots and extract the problem details. Your response must be a single JSON object. Do not include any explanatory text or markdown formatting like \`\`\`json around the object. The required structure is:
+  // COMBINED EXTRACTION & CLASSIFICATION: This single prompt does two jobs at once.
+  EXTRACTION_AND_CLASSIFICATION: (lang: string) => `Analyze the screenshots and extract the problem details. Your response must be ONLY a single, clean JSON object.
+Based on the problem statement, also classify its complexity. Set "complexity" to "high" if it is a complex math, logic, coding, or data interpretation problem requiring deep reasoning. Otherwise, set it to "normal".
+
+The required JSON structure is:
 {
   "problem_statement": "The exact problem text, transcribed accurately.",
   "constraints": "All key constraints, listed clearly.",
   "function_signature": "The function signature or class structure, if it is a coding problem.",
   "example_input": "The provided sample input, if any.",
   "example_output": "The expected sample output, if any.",
-  "problem_type": "Categorize as 'coding', 'quantitative', 'logical', or 'general_mcq'.",
-  "options": ["Include all options here if it is an MCQ."]
+  "problem_type": "Categorize as 'coding', 'quantitative', 'logical', 'data_interpretation', or 'general_mcq'.",
+  "options": ["Include all options here if it is an MCQ."],
+  "complexity": "high"
 }
 The user's preferred language is ${lang}.`,
 
@@ -54,10 +59,6 @@ ${problem}
 **CONSTRAINTS:**
 ${constraints}
 
-**REQUIREMENTS:**
-- Provide an optimal and correct solution.
-- Ensure the code is clean, well-commented, and handles all edge cases.
-
 **RESPONSE FORMAT:**
 Return the complete, runnable code inside a single code block. Below the code block, provide a brief analysis.
 
@@ -68,7 +69,7 @@ Return the complete, runnable code inside a single code block. Below the code bl
 **ANALYSIS:**
 - **Approach:** [A brief explanation of the core idea behind your solution.]
 - **Algorithm:** [The name of the algorithm or data structure used.]
-- **Complexity:** [Provide the Time and Space complexity (e.g., Time: O(n), Space: O(1))].`,
+- **Complexity:** [Provide the Time and Space complexity].`,
 
   QUANTITATIVE_APTITUDE: (problem: string, options: string) => `Solve the following quantitative aptitude problem with a clear, step-by-step methodology.
 
@@ -79,12 +80,12 @@ ${problem}
 ${options}
 
 **SOLUTION:**
-1.  **Identify Goal & Givens:** Clearly state what needs to be calculated and list the known values from the problem.
-2.  **Select Formula/Method:** Name the relevant mathematical formula or method (e.g., Simple Interest Formula, Permutation, Speed-Distance-Time).
-3.  **Step-by-Step Calculation:** Show the complete calculation, substituting the values into the formula.
+1.  **Identify Goal & Givens:** Clearly state what needs to be calculated and list the known values.
+2.  **Select Formula/Method:** Name the relevant mathematical formula or method.
+3.  **Step-by-Step Calculation:** Show the complete calculation.
 4.  **Final Answer Verification:** Verify the result and match it to the correct option.
 
-The final line must be: **ANSWER: [The correct option letter, e.g., A]**`,
+The final line must be: **ANSWER: [The correct option letter]**`,
 
   LOGICAL_REASONING: (problem: string, options: string) => `Solve the following logical reasoning problem with a structured deductive approach.
 
@@ -95,12 +96,28 @@ ${problem}
 ${options}
 
 **LOGICAL DEDUCTION:**
-1.  **Analyze the Premise:** Break down the core statement, pattern, or puzzle into its logical components.
-2.  **Apply Reasoning Rule:** State the logical rule being applied (e.g., deductive reasoning, pattern recognition, syllogism).
-3.  **Eliminate Incorrect Options:** Step-by-step, explain why each of the incorrect options violates the premise or pattern.
-4.  **Confirm the Correct Option:** State why the chosen option is the only one that logically satisfies the premise.
+1.  **Analyze the Premise:** Break down the core statement or pattern.
+2.  **Apply Reasoning Rule:** State the logical rule being applied.
+3.  **Eliminate Incorrect Options:** Explain why each incorrect option is invalid.
+4.  **Confirm the Correct Option:** State why the chosen option is the only logical conclusion.
 
-The final line must be: **ANSWER: [The correct option letter, e.g., A]**`,
+The final line must be: **ANSWER: [The correct option letter]**`,
+
+  DATA_INTERPRETATION: (problem: string, options: string) => `Analyze the data presented in the screenshot (e.g., chart, table, graph) and answer the question.
+
+**PROBLEM:**
+${problem}
+
+**OPTIONS:**
+${options}
+
+**DATA ANALYSIS:**
+1.  **Identify Data Source:** Describe the type of data presented (e.g., Bar Chart, Pie Chart, Line Graph, Table).
+2.  **Extract Relevant Data:** List the key data points from the visual needed to answer the question.
+3.  **Perform Calculation/Comparison:** Show any calculations or comparisons required based on the extracted data.
+4.  **Conclusion:** State the final answer clearly and match it to the correct option.
+
+The final line must be: **ANSWER: [The correct option letter]**`,
 };
 
 export class ProcessingHelper {
@@ -115,11 +132,8 @@ export class ProcessingHelper {
     this.screenshotHelper = deps.getScreenshotHelper();
 
     this.axiosInstance = axios.create({
-      timeout: 120000, // 120-second timeout for complex problems
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      timeout: 120000, // 120-second timeout for very complex problems
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
     });
 
     this.initializeGeminiClient();
@@ -137,17 +151,18 @@ export class ProcessingHelper {
     }
   }
 
-  // --- Strategic Model Selection for Speed and Power ---
-  private selectModel(taskType: 'extraction' | 'solution'): string {
-    // Use the fastest 2.5 model for the simple extraction task.
-    if (taskType === 'extraction') {
+  private selectModel(taskType: 'analysis' | 'solution', complexity: 'high' | 'normal' = 'normal'): string {
+    if (taskType === 'analysis') {
       return "gemini-2.5-flash";
     }
-    // Use the most powerful 2.5 model for the complex reasoning/solving task.
-    return "gemini-2.5-pro";
+    if (complexity === 'high') {
+      console.log("🚀 High complexity detected. Using Gemini 2.5 Pro.");
+      return "gemini-2.5-pro";
+    }
+    console.log("⚡ Normal complexity detected. Using Gemini 2.5 Flash.");
+    return "gemini-2.5-flash";
   }
 
-  // --- Intelligent Prompt Selection ---
   private selectPrompt(problemInfo: any): string {
     const { problem_statement, constraints, options, problem_type } = problemInfo;
     const language = configHelper.loadConfig().language || "python";
@@ -157,32 +172,29 @@ export class ProcessingHelper {
         return PROMPT_TEMPLATES.QUANTITATIVE_APTITUDE(problem_statement, options?.join("\n") || "");
       case 'logical':
         return PROMPT_TEMPLATES.LOGICAL_REASONING(problem_statement, options?.join("\n") || "");
+      case 'data_interpretation':
+        return PROMPT_TEMPLATES.DATA_INTERPRETATION(problem_statement, options?.join("\n") || "");
       case 'coding':
         return PROMPT_TEMPLATES.CODING(problem_statement, constraints || "", language);
-      default: // Handles 'general_mcq' and any other fallbacks
+      default:
         return PROMPT_TEMPLATES.LOGICAL_REASONING(problem_statement, options?.join("\n") || "");
     }
   }
 
-  private async makeGeminiRequest(messages: GeminiMessage[], taskType: 'extraction' | 'solution', signal: AbortSignal): Promise<string> {
-    if (!this.geminiApiKey) {
-      throw new Error("API key is not configured. Please set it in the settings.");
-    }
+  private async makeGeminiRequest(messages: GeminiMessage[], model: string, signal: AbortSignal): Promise<string> {
+    if (!this.geminiApiKey) throw new Error("API key is not configured.");
 
-    const model = this.selectModel(taskType);
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.geminiApiKey}`;
+
+    // DYNAMIC TOKEN ALLOCATION: Give Pro model more room to think.
+    const maxOutputTokens = model.includes("pro") ? 16384 : 8192;
 
     try {
       const response = await this.axiosInstance.post<GeminiResponse>(
         url,
         {
           contents: messages,
-          generationConfig: {
-            temperature: 0.0, // Set to 0.0 for maximum determinism in logical tasks
-            maxOutputTokens: 8192,
-            topP: 0.95,
-            topK: 40,
-          },
+          generationConfig: { temperature: 0.0, maxOutputTokens, topP: 0.95, topK: 40 },
           safetySettings: [
             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
             { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
@@ -198,23 +210,18 @@ export class ProcessingHelper {
 
       if (!text) {
         console.error("--> Invalid API Response Received:", JSON.stringify(responseData, null, 2));
-        const blockReason = responseData.promptFeedback?.blockReason;
-        if (blockReason) {
-          throw new Error(`Request blocked by API. Reason: ${blockReason}`);
-        }
         const finishReason = responseData.candidates?.[0]?.finishReason;
-        if (finishReason === 'MAX_TOKENS') {
-            throw new Error("The model's response was too long and was cut off.");
-        }
-        throw new Error("Invalid API response: The response was empty or had an unexpected structure.");
+        const blockReason = responseData.promptFeedback?.blockReason;
+        if (blockReason) throw new Error(`Request blocked by API. Reason: ${blockReason}`);
+        if (finishReason === 'MAX_TOKENS') throw new Error("The model's response was too long and was cut off.");
+        throw new Error("Invalid API response: The response was empty or malformed.");
       }
 
       return text;
     } catch (error) {
       if (axios.isAxiosError(error) && error.response) {
         console.error("--> API Error Response:", JSON.stringify(error.response.data, null, 2));
-        const errorMessage = error.response.data?.error?.message || "An unknown API error occurred.";
-        throw new Error(errorMessage);
+        throw new Error(error.response.data?.error?.message || "An unknown API error occurred.");
       }
       throw error;
     }
@@ -223,20 +230,15 @@ export class ProcessingHelper {
   private async loadScreenshots(paths: string[]): Promise<Array<{ data: string }>> {
     const readFilePromises = paths.map(async (p) => {
       try {
-        const buffer = await fs.readFile(p);
-        return { data: buffer.toString("base64") };
+        return { data: (await fs.readFile(p)).toString("base64") };
       } catch (error) {
         console.warn(`Could not read screenshot file: ${p}, skipping.`);
         return null;
       }
     });
-
     const results = await Promise.all(readFilePromises);
     const validScreenshots = results.filter((r): r is { data: string } => r !== null);
-
-    if (validScreenshots.length === 0) {
-      throw new Error("No valid screenshots could be loaded.");
-    }
+    if (validScreenshots.length === 0) throw new Error("No valid screenshots could be loaded.");
     return validScreenshots;
   }
 
@@ -247,9 +249,7 @@ export class ProcessingHelper {
       return;
     }
 
-    if (this.abortController) {
-      this.abortController.abort("New request started.");
-    }
+    if (this.abortController) this.abortController.abort("New request started.");
     this.abortController = new AbortController();
 
     try {
@@ -258,44 +258,42 @@ export class ProcessingHelper {
         mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.NO_SCREENSHOTS);
         return;
       }
-
-      await this.runFullProcessingFlow(this.abortController.signal, mainWindow, screenshotQueue);
+      await this.runOptimizedProcessingFlow(this.abortController.signal, mainWindow, screenshotQueue);
     } catch (error: any) {
-      if (!isCancel(error)) {
-        this.handleProcessingError(error, mainWindow);
-      }
+      if (!isCancel(error)) this.handleProcessingError(error, mainWindow);
     } finally {
       this.abortController = null;
     }
   }
 
-  private async runFullProcessingFlow(signal: AbortSignal, mainWindow: BrowserWindow, queue: string[]): Promise<void> {
+  private async runOptimizedProcessingFlow(signal: AbortSignal, mainWindow: BrowserWindow, queue: string[]): Promise<void> {
     mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.INITIAL_START);
 
-    // Step 1: Fast Extraction
-    mainWindow.webContents.send("processing-status", { message: "Analyzing screenshots...", progress: 25 });
+    // --- Stage 1: Combined Extraction & Classification (One fast call) ---
+    mainWindow.webContents.send("processing-status", { message: "Analyzing problem...", progress: 33 });
     const screenshots = await this.loadScreenshots(queue);
     const language = configHelper.loadConfig().language || "python";
-
-    const extractionMessages: GeminiMessage[] = [{
+    const analysisModel = this.selectModel('analysis');
+    const analysisMessages: GeminiMessage[] = [{
       role: "user",
       parts: [
-        { text: PROMPT_TEMPLATES.EXTRACTION(language) },
+        { text: PROMPT_TEMPLATES.EXTRACTION_AND_CLASSIFICATION(language) },
         ...screenshots.map(s => ({ inlineData: { mimeType: "image/png", data: s.data } })),
       ],
     }];
-
-    const extractionResponse = await this.makeGeminiRequest(extractionMessages, 'extraction', signal);
-    const problemInfo = this.parseJsonResponse(extractionResponse);
+    const analysisResponse = await this.makeGeminiRequest(analysisMessages, analysisModel, signal);
+    const problemInfo = this.parseJsonResponse(analysisResponse);
     this.deps.setProblemInfo(problemInfo);
     mainWindow.webContents.send(this.deps.PROCESSING_EVENTS.PROBLEM_EXTRACTED, problemInfo);
 
-    // Step 2: Powerful Solving
-    mainWindow.webContents.send("processing-status", { message: "Generating solution...", progress: 75 });
+    // --- Stage 2: Intelligent Solving (Uses the right model for the job) ---
+    mainWindow.webContents.send("processing-status", { message: "Generating solution...", progress: 66 });
+    const { complexity } = problemInfo; // Get complexity from the first call
+    const solutionModel = this.selectModel('solution', complexity);
     const solutionPrompt = this.selectPrompt(problemInfo);
     const solutionMessages: GeminiMessage[] = [{ role: "user", parts: [{ text: solutionPrompt }] }];
 
-    const solutionResponse = await this.makeGeminiRequest(solutionMessages, 'solution', signal);
+    const solutionResponse = await this.makeGeminiRequest(solutionMessages, solutionModel, signal);
     const solutionData = this.parseSolutionResponse(solutionResponse, problemInfo.problem_type);
 
     mainWindow.webContents.send("processing-status", { message: "Complete", progress: 100 });
@@ -309,7 +307,7 @@ export class ProcessingHelper {
       return JSON.parse(jsonText);
     } catch (error) {
       console.error("Failed to parse JSON from API response:", response);
-      throw new Error("Could not understand the problem from the screenshots. Please try again with a clearer view.");
+      throw new Error("Could not parse the model's analysis. Please try again.");
     }
   }
 
@@ -317,9 +315,7 @@ export class ProcessingHelper {
     if (problemType === 'coding') {
         const codeMatch = response.match(/```(?:\w+)?\s*([\s\S]*?)```/);
         const code = codeMatch ? codeMatch[1].trim() : "// No code found in response";
-
         const extractDetail = (regex: RegExp) => response.match(regex)?.[1]?.trim() || "N/A";
-
         return {
           code,
           thoughts: [
@@ -330,9 +326,8 @@ export class ProcessingHelper {
           space_complexity: extractDetail(/Space:\s*(O\([^)]+\))/)
         };
     } else {
-        // For quant/logical, the entire response is the solution/thought process.
         return {
-            code: response.trim(), // The full text solution is treated as the main content
+            code: response.trim(),
             thoughts: [],
             time_complexity: "N/A",
             space_complexity: "N/A"
