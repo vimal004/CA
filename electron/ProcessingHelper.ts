@@ -202,9 +202,9 @@ export class ProcessingHelper {
   // Smart model selection based on problem type
   private selectModel(problemType?: string, complexity?: 'simple' | 'complex'): string {
     if (complexity === 'simple' || problemType === 'MCQ') {
-      return "gemini-2.0-flash-exp" // Fastest for simple tasks
+      return "gemini-2.5-flash" // Fastest for simple tasks
     }
-    return "gemini-2.0-flash-exp" // Consistent model choice
+    return "gemini-2.5-flash" // Consistent model choice
   }
 
   // Optimized prompt selection
