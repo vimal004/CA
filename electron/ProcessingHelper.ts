@@ -48,7 +48,7 @@ The required JSON structure is:
 {
   "problem_statement": "The exact problem text, transcribed accurately.",
   "constraints": "All key constraints, listed clearly. For personal questions, this can be an empty string.",
-  "function_signature": "The function signature or class structure, if any.",
+  "function_signature": "Strictly extract the function signature, class name, param variable types, and return type, names given in the coding environment.",
   "example_input": "The provided sample input, if any.",
   "example_output": "The expected sample output, if any.",
   "problem_type": "Categorize as 'coding', 'quantitative', 'logical', 'data_interpretation', 'general_mcq', or 'personal_interview'.",
@@ -57,7 +57,7 @@ The required JSON structure is:
 }
 The user's preferred language is ${lang}.`,
 
-  CODING: (problem: string, constraints: string, lang: string) => `Solve the following coding problem in ${lang}.
+  CODING: (problem: string, constraints: string, function_signature: string, lang: string) => `Solve the following coding problem in ${lang}.
 
 **PROBLEM:**
 ${problem}
@@ -66,7 +66,8 @@ ${problem}
 ${constraints}
 
 **RESPONSE FORMAT:**
-Return the complete, runnable code inside a single code block. Below the code block, provide a brief analysis.
+Return the complete, runnable code inside a single code block following the format specified in the ${function_signature}. Below the code block, provide a brief analysis. Avoid verbose comment lines within code. Only essential comments (2-3 max) are allowed.
+Keep the code clean and focused.
 
 \`\`\`${lang}
 // [Your complete solution code here]
@@ -77,7 +78,7 @@ Return the complete, runnable code inside a single code block. Below the code bl
 - **Algorithm:** [The name of the algorithm or data structure used.]
 - **Complexity:** [Provide the Time and Space complexity].`,
 
-  QUANTITATIVE_APTITUDE: (problem: string, options: string) => `Solve the following quantitative aptitude problem with a clear, step-by-step methodology.
+  QUANTITATIVE_APTITUDE: (problem: string, options: string) => `Solve the following quantitative aptitude problem with a clear, step-by-step methodology but not overtly verbose.
 
 **PROBLEM:**
 ${problem}
@@ -117,7 +118,7 @@ ${problem}
 **OPTIONS:**
 ${options}
 
-**DATA ANALYSIS:**
+**DATA ANALYSIS:**  (Don't be too verbose)
 1.  **Identify Data Source:** Describe the type of data presented (e.g., Bar Chart, Pie Chart, Line Graph, Table).
 2.  **Extract Relevant Data:** List the key data points from the visual needed to answer the question.
 3.  **Perform Calculation/Comparison:** Show any calculations or comparisons required based on the extracted data.
@@ -214,7 +215,7 @@ export class ProcessingHelper {
   // --- END FIXED METHOD ---
 
   private selectPrompt(problemInfo: any): string {
-    const { problem_statement, constraints, options, problem_type } = problemInfo;
+    const { problem_statement, constraints, function_signature, options, problem_type } = problemInfo;
     const language = configHelper.loadConfig().language || "python";
 
     switch (problem_type) {
@@ -225,7 +226,7 @@ export class ProcessingHelper {
       case "data_interpretation":
         return PROMPT_TEMPLATES.DATA_INTERPRETATION(problem_statement, options?.join("\n") || "");
       case "coding":
-        return PROMPT_TEMPLATES.CODING(problem_statement, constraints || "", language);
+        return PROMPT_TEMPLATES.CODING(problem_statement, constraints || "", function_signature, language);
       case "personal_interview":
         if (!this.resumeContext) {
           console.error("Attempted to answer interview question, but resume context is not loaded.");
