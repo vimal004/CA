@@ -42,7 +42,6 @@ const PROMPT_TEMPLATES = {
   EXTRACTION_AND_CLASSIFICATION: (lang: string) => `Analyze the screenshots and extract the problem details. Your response must be ONLY a single, clean JSON object.
 Based on the problem statement, also classify its complexity and type.
 - Set "complexity" to "high" if it is a complex math, logic, coding, or data interpretation problem requiring deep reasoning. Otherwise, set it to "normal".
-- **Crucially, if the screenshot contains a behavioral or personal interview question (e.g., "Tell me about yourself", "What are your weaknesses?", "Describe a challenging project"), you MUST set "problem_type" to "personal_interview".**
 
 The required JSON structure is:
 {
@@ -66,7 +65,7 @@ ${problem}
 ${constraints}
 
 **RESPONSE FORMAT:**
-Return the complete, runnable code inside a single code block following the format specified in the ${function_signature}. Below the code block, provide a brief analysis. Avoid verbose comment lines within code. Only essential comments (2-3 max) are allowed.
+Return the complete, runnable code inside a single code block following exact format specified in the ${function_signature}. Below the code block, provide a brief analysis. Avoid verbose comment lines within code. Only essential comments (2-3 max) are allowed.
 Keep the code clean and focused.
 
 \`\`\`${lang}
