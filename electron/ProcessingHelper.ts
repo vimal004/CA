@@ -1,8 +1,3 @@
-// --- ADDED IMPORTS ---
-import fs from "node:fs/promises";
-import path from "node:path";
-import pdf from "pdf-parse";
-// --- END ADDED IMPORTS ---
 
 import { ScreenshotHelper } from "./ScreenshotHelper";
 import { IProcessingHelperDeps } from "./main";
@@ -158,33 +153,20 @@ export class ProcessingHelper {
   private geminiApiKey: string | null = null;
   private axiosInstance: AxiosInstance;
   private abortController: AbortController | null = null;
-  private resumeContext: string | null = null;
-  private readonly resumePath = "";
 
   constructor(deps: IProcessingHelperDeps) {
     this.deps = deps;
     this.screenshotHelper = deps.getScreenshotHelper();
-
     this.axiosInstance = axios.create({
       timeout: 120000,
       headers: { "Content-Type": "application/json", Accept: "application/json" },
     });
-
     this.initializeGeminiClient();
-    this.loadResumeContext();
     configHelper.on("config-updated", () => this.initializeGeminiClient());
   }
 
   private async loadResumeContext(): Promise<void> {
-    try {
-      const dataBuffer = await fs.readFile(this.resumePath);
-      const data = await pdf(dataBuffer);
-      this.resumeContext = data.text;
-      console.log("✅ Resume context loaded successfully.");
-    } catch (error) {
-      console.error("❌ Failed to load or parse resume PDF:", error);
-      this.resumeContext = null;
-    }
+  // Resume context loading removed
   }
 
   private initializeGeminiClient(): void {
@@ -226,12 +208,6 @@ export class ProcessingHelper {
         return PROMPT_TEMPLATES.DATA_INTERPRETATION(problem_statement, options?.join("\n") || "");
       case "coding":
         return PROMPT_TEMPLATES.CODING(problem_statement, constraints || "", function_signature, language);
-      case "personal_interview":
-        if (!this.resumeContext) {
-          console.error("Attempted to answer interview question, but resume context is not loaded.");
-          throw new Error("Your resume could not be loaded, so the interview question cannot be answered.");
-        }
-        return PROMPT_TEMPLATES.PERSONAL_INTERVIEW(this.resumeContext, problem_statement);
       default:
         return PROMPT_TEMPLATES.LOGICAL_REASONING(problem_statement, options?.join("\n") || "");
     }
