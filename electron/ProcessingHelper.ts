@@ -317,6 +317,12 @@ export class ProcessingHelper {
       if (!isCancel(error)) this.handleProcessingError(error, mainWindow);
     } finally {
       this.abortController = null;
+      // --- FIX: Always restore window visibility and opacity after processing ---
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setOpacity(1);
+        mainWindow.setIgnoreMouseEvents(false);
+        mainWindow.showInactive();
+      }
     }
   }
 
