@@ -159,7 +159,7 @@ export class ProcessingHelper {
   private axiosInstance: AxiosInstance;
   private abortController: AbortController | null = null;
   private resumeContext: string | null = null;
-  private readonly resumePath = "C:\\Users\\Vimal Manoharan\\Desktop\\CA\\electron\\Main Resume.pdf";
+  private readonly resumePath = "";
 
   constructor(deps: IProcessingHelperDeps) {
     this.deps = deps;
